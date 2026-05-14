@@ -17,6 +17,6 @@
     "5001": { "label": "HTTPS" },
     "8080": { "label": "HTTP (alt)" }
   },
-  "postCreateCommand": "dotnet --info",
+  "postCreateCommand": "dotnet --info && bash scripts/setup-r2k-codespace.sh",
   "remoteUser": "vscode"
 }

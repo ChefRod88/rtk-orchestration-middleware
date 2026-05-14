@@ -169,27 +169,27 @@ From the repo root:
 cd /workspaces/r2k-orchestration-middleware
 ```
 
-Build and install the local `rtk` wrapper:
+New Codespaces run `scripts/setup-r2k-codespace.sh` from `.devcontainer/devcontainer.json`. To apply the same setup in an existing terminal, run:
 
 ```bash
-bash scripts/install-rtk.sh
-```
-
-Set the AWS API Gateway endpoint:
-
-```bash
-export RTK_API_URL='https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand'
-unset RTK_FUNCTION_KEY
-```
-
-Persist it for new terminals:
-
-```bash
-{
-  echo "export RTK_API_URL='https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand'"
-  echo "unset RTK_FUNCTION_KEY"
-} >> ~/.bashrc
+bash scripts/setup-r2k-codespace.sh
 source ~/.bashrc
+```
+
+The setup script refreshes `/usr/local/bin/rtk`, sets the AWS API Gateway endpoint, and adds these aliases:
+
+```bash
+alias agent='rtk agent'
+alias git='rtk git'
+alias npm='rtk npm'
+alias npx='rtk npx'
+```
+
+Verify:
+
+```bash
+type agent
+type git
 ```
 
 Test direct CLI use:
@@ -198,38 +198,31 @@ Test direct CLI use:
 rtk git status
 ```
 
-You should see:
+The command output appears first, then the RTK savings block:
 
 ```text
-[... RTK ...] Optimizing...
-```
+<git status output>
 
-Then the command output and savings summary.
+======================================
+RTK SAVINGS
+Original tokens: 2
+Optimized tokens: 2
+Tokens saved: 0
+Savings: 0%
+======================================
+```
 
 ## Make Cursor Agent Terminal Commands Use R2K
 
 Cursor Agent mode cannot be forced to rewrite every natural-language prompt through this app. What you can do is make common terminal commands route through `rtk` so agent-run shell commands are optimized before execution.
 
-Add aliases in the Codespace shell:
+The requested `agent` alias is installed by `scripts/setup-r2k-codespace.sh`:
 
 ```bash
-cat <<'EOF' >> ~/.bashrc
-
-# R2K command optimization aliases
-export RTK_API_URL='https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand'
-unset RTK_FUNCTION_KEY
-alias git='rtk git'
-alias npm='rtk npm'
-alias npx='rtk npx'
-alias dotnet='rtk dotnet'
-alias curl='rtk curl'
-alias aws='rtk aws'
-EOF
-
-source ~/.bashrc
+alias agent='rtk agent'
 ```
 
-Recommended safer starter aliases:
+Recommended default command aliases:
 
 ```bash
 alias git='rtk git'
@@ -237,13 +230,15 @@ alias npm='rtk npm'
 alias npx='rtk npx'
 ```
 
-Be careful aliasing `dotnet`, `curl`, and `aws` because deployment tools and scripts may expect exact command behavior. If an alias causes trouble, bypass it:
+Be careful aliasing `dotnet`, `curl`, and `aws` globally because deployment tools and scripts may expect exact command behavior. If an alias causes trouble, bypass it:
 
 ```bash
 command git status
 /usr/bin/git status
 command dotnet build
 ```
+
+The project rule `.cursor/rules/r2k-agent-optimizer.mdc` also instructs agents to show the answer or command result first, then show RTK savings underneath.
 
 ## Cursor MCP Option
 

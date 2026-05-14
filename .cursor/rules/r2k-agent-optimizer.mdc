@@ -1,0 +1,45 @@
+# R2K optimizer usage for agent terminal commands
+
+## Goal
+
+When working in this repository, route shell commands through the R2K optimizer whenever practical so the user can see command output first and token savings second.
+
+## Required behavior
+
+- Prefer `rtk <command>` for terminal commands that execute project tooling, package managers, git, curl, AWS CLI, or other shell work.
+- If the shell has aliases loaded, `agent` must resolve to `rtk agent`.
+- For common terminal commands, prefer the configured aliases:
+  - `agent='rtk agent'`
+  - `git='rtk git'`
+  - `npm='rtk npm'`
+  - `npx='rtk npx'`
+- After command execution, show the answer/result first, then report the RTK savings summary underneath.
+- Do not claim that R2K optimizes Cursor natural-language prompts directly. R2K optimizes terminal commands routed through `rtk`, aliases, or MCP.
+
+## Allowed bypasses
+
+Use `command <tool>` or an absolute path only when needed for:
+
+- installing or repairing `rtk` itself;
+- avoiding recursive aliases during setup, deployment, git commit, or diagnostics;
+- commands that must not be rewritten by an optimizer;
+- commands that include secrets or credentials;
+- situations where `rtk` is unavailable or the optimizer endpoint is down.
+
+If bypassing RTK for a substantive command, briefly say why.
+
+## Verification commands
+
+Use these checks when validating setup:
+
+```bash
+type agent
+type git
+rtk git status
+```
+
+Expected alias check:
+
+```text
+agent is aliased to `rtk agent'
+```

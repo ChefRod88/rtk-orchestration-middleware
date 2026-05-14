@@ -66,6 +66,8 @@ The live AWS path now uses **API Gateway to Lambda (`R2KOptimizer`) to RDS MySQL
 
 Important scope note: R2K optimizes shell commands routed through `rtk`, aliases, or MCP. It does **not** automatically rewrite Cursor's natural-language model prompts.
 
+New Codespaces run [`scripts/setup-r2k-codespace.sh`](scripts/setup-r2k-codespace.sh), which installs `rtk`, sets the AWS optimizer endpoint, and adds `agent='rtk agent'` plus common command aliases. Optimized commands should show the command result first and the RTK savings summary underneath.
+
 ---
 
 ## Critical: use an Azure Function App, not a Web App
