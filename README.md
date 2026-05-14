@@ -1,4 +1,4 @@
-# R2K Orchestration Middleware
+# RTK Orchestration Middleware
 
 <p align="center">
   <strong>Intercept · optimize · execute · measure</strong><br/>
