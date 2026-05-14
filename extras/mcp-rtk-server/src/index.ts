@@ -1,9 +1,9 @@
 /**
  * MCP stdio server exposing `run_rtk_command` → spawns `rtk` with tokenized argv.
- * Handshake / JSON-RPC framing is handled by @modelcontextprotocol/server (stdio transport).
+ * Uses @modelcontextprotocol/sdk (JSON-RPC lifecycle via stdio transport).
  */
-import { McpServer } from "@modelcontextprotocol/server";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { spawn } from "node:child_process";
 import process from "node:process";
 import { parse } from "shell-quote";
@@ -26,7 +26,7 @@ function tokenizeCliCommand(raw: string): string[] {
   for (const piece of parts) {
     if (typeof piece !== "string") {
       throw new Error(
-        "Command uses shell operators/redirection unsupported here; passthrough a simpler argv-shaped string.",
+        "Command uses shell operators/redirection unsupported here; use a simpler argv-shaped command string.",
       );
     }
     args.push(piece);
@@ -60,21 +60,21 @@ function spawnRtk(command: string): Promise<{ stdout: string; stderr: string; ex
   });
 }
 
-const server = new McpServer({
-  name: "r2k-rtk",
-  version: "1.0.0",
-});
+const server = new McpServer(
+  { name: "r2k-rtk", version: "1.0.0" },
+  { capabilities: { tools: {} } },
+);
 
 server.registerTool(
   "run_rtk_command",
   {
     description:
-      "Runs `/usr/local/bin/rtk` (override with RTK_CLI_PATH) after tokenizing `command`; returns stdout.",
+      "Runs rtk (see RTK_CLI_PATH, default /usr/local/bin/rtk) after tokenizing command; returns stdout plus stderr/exitCode.",
     inputSchema: z.object({
       command: z
         .string()
         .min(1)
-        .describe('Single shell-style invocation for rtk args, e.g. "npm install" or \'git status --short\''),
+        .describe('Invocation for rtk argv, e.g. "npm install" or \'git status --short\''),
     }),
   },
   async ({ command }) => {
