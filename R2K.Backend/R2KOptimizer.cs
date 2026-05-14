@@ -56,13 +56,13 @@ public sealed class R2KOptimizer(
                 await using var conn = new SqlConnection(connString);
                 await conn.OpenAsync(req.FunctionContext.CancellationToken);
                 await conn.ExecuteAsync(
-                    "INSERT INTO TokenLogs (Command, OriginalTokens, OptimizedTokens, SavingsPercent) VALUES (@c, @orig, @opt, @p)",
+                    "INSERT INTO TokenLogs (Command, OriginalTokens, OptimizedTokens, SavingsPercent, Timestamp) VALUES (@cmd, @orig, @opt, @perc, GETDATE())",
                     new
                     {
-                        c = rawCommand,
+                        cmd = rawCommand,
                         orig = metrics.TokensOriginal,
                         opt = metrics.TokensOptimized,
-                        p = metrics.EfficiencyPercent,
+                        perc = metrics.EfficiencyPercent,
                     });
                 totalSessionTokenSavings = await conn.ExecuteScalarAsync<int>(
                     "SELECT COALESCE(SUM(OriginalTokens - OptimizedTokens), 0) FROM TokenLogs");
