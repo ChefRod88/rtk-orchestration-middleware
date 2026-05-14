@@ -20,6 +20,12 @@ if (string.Equals(args[0], "--cursor-session-report", StringComparison.Ordinal))
     return;
 }
 
+if (string.Equals(args[0], "--last-prompt-savings", StringComparison.Ordinal))
+{
+    CursorSessionMeter.PrintLatestPromptSavings();
+    return;
+}
+
 if (string.Equals(args[0], "--cursor-session-reset", StringComparison.Ordinal))
 {
     CursorSessionMeter.Reset();
@@ -278,9 +284,16 @@ static void WritePromptOrchestrationJson(
     decimal savingsPercent = contextPruning.OriginalTokenCount > 0
         ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
         : 0;
+    CursorSessionMeter.RecordLatestPromptSavings(new PromptSavingsSnapshot(
+        DateTimeOffset.UtcNow,
+        status,
+        contextPruning.OriginalTokenCount,
+        contextPruning.PrunedTokenCount,
+        saved,
+        savingsPercent));
     var payload = new
     {
-        optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved),
+        optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved, savingsPercent),
         orchestration_status = status,
         metrics = new
         {
@@ -297,7 +310,8 @@ static void WritePromptOrchestrationJson(
 static string BuildOptimizedPrompt(
     string prompt,
     ContextPruningResult contextPruning,
-    int saved)
+    int saved,
+    decimal savingsPercent)
 {
     if (saved <= 0 || string.IsNullOrWhiteSpace(contextPruning.PrunedContext))
         return prompt;
@@ -310,6 +324,14 @@ static string BuildOptimizedPrompt(
     ```text
     {contextPruning.PrunedContext.Trim()}
     ```
+
+    After you complete the answer, append this exact footer:
+
+    RTK Savings:
+    - Original context tokens: {contextPruning.OriginalTokenCount}
+    - Pruned context tokens: {contextPruning.PrunedTokenCount}
+    - Tokens saved: {saved}
+    - Savings: {savingsPercent.ToString("0.##", CultureInfo.InvariantCulture)}%
     """;
 }
 

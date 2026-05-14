@@ -315,7 +315,7 @@ The installer:
 
 Lookup order is repo-local `hooks.json` first, then the global fallback at `~/.config/r2k/hooks.json`. This means any repo can use RTK immediately, while specific repos can still override policy locally.
 
-The global prompt hook is the closest available automatic mode: every visible prompt is inspected before submit, and when RTK detects savings it blocks the original prompt with an RTK-pruned prompt to resubmit. Cursor may still add hidden/system context outside this hook, so `rtk --cursor-session-report` reports observed session tokens rather than full provider-side billing tokens.
+The global prompt hook is the closest available automatic mode: every visible prompt is inspected before submit, and when RTK detects savings it blocks the original prompt with an RTK-pruned prompt to resubmit. The optimized prompt instructs Cursor to append an **RTK Savings** footer to its final answer. The same latest prompt numbers are available in a terminal with `rtk --last-prompt-savings`, and the whole observed session is available with `rtk --cursor-session-report`. Cursor may still add hidden/system context outside this hook, so RTK reports observed session tokens rather than full provider-side billing tokens.
 
 The MCP server exposes:
 

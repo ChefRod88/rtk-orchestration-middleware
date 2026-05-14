@@ -150,8 +150,10 @@ This writes the global policy to `~/.config/r2k/hooks.json`, creates shims under
 `r2k-optimizer` server. It also installs a global Cursor prompt hook at
 `~/.cursor/hooks.json` when supported by your Cursor build. That hook runs before
 visible prompt submission and can block a noisy prompt with an RTK-pruned
-resubmission prompt. A repo-local `hooks.json` still overrides the global policy
-when present.
+resubmission prompt. That resubmission prompt instructs Cursor to append an
+**RTK Savings** footer to its answer. You can also print the latest prompt
+savings in any terminal with `rtk --last-prompt-savings`. A repo-local
+`hooks.json` still overrides the global policy when present.
 
 **Environment (required; no embedded production URL)**
 

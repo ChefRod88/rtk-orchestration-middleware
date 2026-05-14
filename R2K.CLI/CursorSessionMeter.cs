@@ -90,6 +90,58 @@ public static class CursorSessionMeter
         Console.WriteLine();
     }
 
+    public static void RecordLatestPromptSavings(PromptSavingsSnapshot snapshot)
+    {
+        try
+        {
+            Directory.CreateDirectory(RtkDirectory);
+            File.WriteAllText(
+                LatestPromptSavingsPath,
+                JsonSerializer.Serialize(snapshot, JsonOptions));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"RTK warning: could not write latest prompt savings: {ex.Message}");
+        }
+    }
+
+    public static void PrintLatestPromptSavings()
+    {
+        if (!File.Exists(LatestPromptSavingsPath))
+        {
+            Console.WriteLine("No RTK prompt savings have been recorded yet.");
+            return;
+        }
+
+        try
+        {
+            var snapshot = JsonSerializer.Deserialize<PromptSavingsSnapshot>(
+                File.ReadAllText(LatestPromptSavingsPath),
+                JsonOptions);
+            if (snapshot is null)
+            {
+                Console.WriteLine("No RTK prompt savings have been recorded yet.");
+                return;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("======================================");
+            Console.WriteLine("Latest RTK Prompt Savings");
+            Console.WriteLine("--------------------------------------");
+            Console.WriteLine($"Status: {snapshot.Status}");
+            Console.WriteLine($"Original context tokens: {snapshot.OriginalContextTokens}");
+            Console.WriteLine($"Pruned context tokens: {snapshot.PrunedContextTokens}");
+            Console.WriteLine($"Tokens saved: {snapshot.TokensSaved}");
+            Console.WriteLine($"Savings: {snapshot.SavingsPercent.ToString("0.##", CultureInfo.InvariantCulture)}%");
+            Console.WriteLine("======================================");
+            Console.WriteLine();
+        }
+        catch (JsonException)
+        {
+            Console.WriteLine("RTK prompt savings file is not readable.");
+        }
+    }
+
     public static int EstimateTokens(string value)
         => (int)Math.Ceiling((value ?? string.Empty).Length / 4m);
 
@@ -98,6 +150,9 @@ public static class CursorSessionMeter
 
     private static string SessionPath
         => Path.Combine(RtkDirectory, "cursor-session.jsonl");
+
+    private static string LatestPromptSavingsPath
+        => Path.Combine(RtkDirectory, "latest-prompt-savings.json");
 }
 
 public sealed record CursorSessionEvent(
@@ -114,3 +169,11 @@ public sealed record CursorSessionSummary(
     int ObservedOriginalTokens,
     int ObservedOptimizedTokens,
     int ObservedTokensSaved);
+
+public sealed record PromptSavingsSnapshot(
+    DateTimeOffset WrittenAtUtc,
+    string Status,
+    int OriginalContextTokens,
+    int PrunedContextTokens,
+    int TokensSaved,
+    decimal SavingsPercent);
