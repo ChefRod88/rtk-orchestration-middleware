@@ -2,19 +2,22 @@ using System.Diagnostics;
 using System.Net.Http.Json;
 using Newtonsoft.Json.Linq;
 
-// Replace host/path after deployment; Function auth may require ?code=...
-const string ApiUrl =
-    "https://rtk-ochestration-middleware-e9ebb3erg8cacbhh.westus3-01.azurewebsites.net/api/OptimizeCommand";
+// Override with env RTK_API_URL; Function auth: set RTK_FUNCTION_KEY (x-functions-key).
+var apiUrl = Environment.GetEnvironmentVariable("RTK_API_URL")
+    ?? "https://rtk-ochestration-middleware-e9ebb3erg8cacbhh.westus3-01.azurewebsites.net/api/OptimizeCommand";
 
 if (args.Length == 0) return;
 
 string fullCommand = string.Join(" ", args);
 
 using var client = new HttpClient();
+var functionKey = Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY");
+if (!string.IsNullOrWhiteSpace(functionKey))
+    client.DefaultRequestHeaders.Add("x-functions-key", functionKey.Trim());
 
 Console.WriteLine("[⚡ RTK] Optimizing...");
 
-var response = await client.PostAsJsonAsync(ApiUrl, new { command = fullCommand });
+var response = await client.PostAsJsonAsync(apiUrl, new { command = fullCommand });
 response.EnsureSuccessStatusCode();
 
 var result = JObject.Parse(await response.Content.ReadAsStringAsync());

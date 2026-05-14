@@ -10,8 +10,9 @@
       "settings": {}
     }
   },
-  "forwardPorts": [5000, 5001, 8080],
+  "forwardPorts": [7071, 5000, 5001, 8080],
   "portsAttributes": {
+    "7071": { "label": "Azure Functions host" },
     "5000": { "label": "HTTP" },
     "5001": { "label": "HTTPS" },
     "8080": { "label": "HTTP (alt)" }
