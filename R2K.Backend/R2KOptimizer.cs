@@ -3,9 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Dapper;
+using MySqlConnector;
 
 namespace R2K.Backend;
 
@@ -48,15 +48,18 @@ public sealed class R2KOptimizer(
 
         int totalSessionTokenSavings = 0;
 
-        string? connString = Environment.GetEnvironmentVariable("SqlConnectionString");
+        string? connString = MySqlTelemetryConnection.BuildConnectionString();
         if (!string.IsNullOrWhiteSpace(connString))
         {
             try
             {
-                await using var conn = new SqlConnection(connString);
+                await using var conn = new MySqlConnection(connString);
                 await conn.OpenAsync(req.FunctionContext.CancellationToken);
                 await conn.ExecuteAsync(
-                    "INSERT INTO TokenLogs (Command, OriginalTokens, OptimizedTokens, SavingsPercent, Timestamp) VALUES (@cmd, @orig, @opt, @perc, GETDATE())",
+                    """
+                    INSERT INTO TokenLogs (Command, OriginalTokens, OptimizedTokens, SavingsPercent, Timestamp)
+                    VALUES (@cmd, @orig, @opt, @perc, UTC_TIMESTAMP(3))
+                    """,
                     new
                     {
                         cmd = rawCommand,
