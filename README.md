@@ -147,8 +147,11 @@ bash scripts/install-r2k-global.sh
 
 This writes the global policy to `~/.config/r2k/hooks.json`, creates shims under
 `~/.local/share/r2k/shims`, and adds/updates `~/.cursor/mcp.json` with the
-`r2k-optimizer` server. A repo-local `hooks.json` still overrides the global
-policy when present.
+`r2k-optimizer` server. It also installs a global Cursor prompt hook at
+`~/.cursor/hooks.json` when supported by your Cursor build. That hook runs before
+visible prompt submission and can block a noisy prompt with an RTK-pruned
+resubmission prompt. A repo-local `hooks.json` still overrides the global policy
+when present.
 
 **Environment (required; no embedded production URL)**
 

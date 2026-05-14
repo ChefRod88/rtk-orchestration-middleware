@@ -311,8 +311,11 @@ The installer:
 3. Creates global shims in `~/.local/share/r2k/shims`.
 4. Builds `extras/mcp-rtk-server`.
 5. Safely adds or updates `r2k-optimizer` in `~/.cursor/mcp.json` while preserving other MCP servers.
+6. Installs a global `beforeSubmitPrompt` hook in `~/.cursor/hooks.json` when supported by Cursor.
 
 Lookup order is repo-local `hooks.json` first, then the global fallback at `~/.config/r2k/hooks.json`. This means any repo can use RTK immediately, while specific repos can still override policy locally.
+
+The global prompt hook is the closest available automatic mode: every visible prompt is inspected before submit, and when RTK detects savings it blocks the original prompt with an RTK-pruned prompt to resubmit. Cursor may still add hidden/system context outside this hook, so `rtk --cursor-session-report` reports observed session tokens rather than full provider-side billing tokens.
 
 The MCP server exposes:
 

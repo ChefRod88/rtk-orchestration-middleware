@@ -7,6 +7,7 @@ set -euo pipefail
 # - Creates command shims under ~/.local/share/r2k/shims
 # - Builds the MCP server
 # - Adds/updates ~/.cursor/mcp.json entry r2k-optimizer without removing other servers
+# - Adds/updates ~/.cursor/hooks.json and global optimize-prompt hook where supported
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -17,15 +18,19 @@ RTK_CONFIG_DIR="${HOME}/.config/r2k"
 RTK_SHIM_DIR="${HOME}/.local/share/r2k/shims"
 CURSOR_CONFIG_DIR="${HOME}/.cursor"
 CURSOR_MCP_JSON="${CURSOR_CONFIG_DIR}/mcp.json"
+CURSOR_HOOKS_DIR="${CURSOR_CONFIG_DIR}/hooks"
+CURSOR_HOOKS_JSON="${CURSOR_CONFIG_DIR}/hooks.json"
 MCP_DIR="${ROOT}/extras/mcp-rtk-server"
 MCP_DIST="${MCP_DIR}/dist/index.js"
+PROMPT_HOOK_SOURCE="${ROOT}/.cursor/hooks/optimize-prompt.py"
+PROMPT_HOOK_TARGET="${CURSOR_HOOKS_DIR}/optimize-prompt.py"
 BASHRC="${HOME}/.bashrc"
 START_MARKER="# >>> r2k global tool >>>"
 END_MARKER="# <<< r2k global tool <<<"
 
 bash "${ROOT}/scripts/install-rtk.sh"
 
-mkdir -p "${RTK_CONFIG_DIR}" "${RTK_SHIM_DIR}" "${CURSOR_CONFIG_DIR}"
+mkdir -p "${RTK_CONFIG_DIR}" "${RTK_SHIM_DIR}" "${CURSOR_CONFIG_DIR}" "${CURSOR_HOOKS_DIR}"
 cp "${ROOT}/hooks.json" "${RTK_CONFIG_DIR}/hooks.json"
 rm -f "${RTK_SHIM_DIR}"/*
 
@@ -86,6 +91,39 @@ with open(config_path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 
+install -m 755 "${PROMPT_HOOK_SOURCE}" "${PROMPT_HOOK_TARGET}"
+python3 - "${CURSOR_HOOKS_JSON}" "${PROMPT_HOOK_TARGET}" <<'PY'
+import json
+import os
+import sys
+
+config_path, hook_path = sys.argv[1:3]
+if os.path.exists(config_path):
+    with open(config_path, encoding="utf-8") as handle:
+        try:
+            config = json.load(handle)
+        except json.JSONDecodeError:
+            config = {}
+else:
+    config = {}
+
+config["version"] = config.get("version", 1)
+hooks = config.setdefault("hooks", {})
+entries = hooks.setdefault("beforeSubmitPrompt", [])
+entries = [entry for entry in entries if entry.get("command") not in (hook_path, "hooks/optimize-prompt.py")]
+entries.append({
+    "command": hook_path,
+    "matcher": "UserPromptSubmit",
+    "timeout": 10,
+    "failClosed": False,
+})
+hooks["beforeSubmitPrompt"] = entries
+
+with open(config_path, "w", encoding="utf-8") as handle:
+    json.dump(config, handle, indent=2)
+    handle.write("\n")
+PY
+
 tmp="$(mktemp)"
 if [[ -f "${BASHRC}" ]]; then
   awk -v start="${START_MARKER}" -v end="${END_MARKER}" '
@@ -112,5 +150,6 @@ echo "RTK global Cursor tool installed."
 echo "Global hooks: ${RTK_CONFIG_DIR}/hooks.json"
 echo "Command shims: ${RTK_SHIM_DIR}"
 echo "Cursor MCP: ${CURSOR_MCP_JSON}"
+echo "Cursor prompt hook: ${CURSOR_HOOKS_JSON}"
 echo "Restart Cursor, then verify Tools & MCP shows r2k-optimizer."
 echo "Open a new terminal or run: source ${BASHRC}"

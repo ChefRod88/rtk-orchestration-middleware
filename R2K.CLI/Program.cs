@@ -280,7 +280,7 @@ static void WritePromptOrchestrationJson(
         : 0;
     var payload = new
     {
-        optimized_prompt = prompt,
+        optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved),
         orchestration_status = status,
         metrics = new
         {
@@ -292,6 +292,25 @@ static void WritePromptOrchestrationJson(
         },
     };
     Console.WriteLine(JsonSerializer.Serialize(payload));
+}
+
+static string BuildOptimizedPrompt(
+    string prompt,
+    ContextPruningResult contextPruning,
+    int saved)
+{
+    if (saved <= 0 || string.IsNullOrWhiteSpace(contextPruning.PrunedContext))
+        return prompt;
+
+    return $"""
+    {prompt.Trim()}
+
+    Use this RTK-pruned context instead of broad workspace context:
+
+    ```text
+    {contextPruning.PrunedContext.Trim()}
+    ```
+    """;
 }
 
 static string? GetShimCommandName()
