@@ -4,7 +4,7 @@ using Newtonsoft.Json.Linq;
 
 // Override with env RTK_API_URL; Function auth: set RTK_FUNCTION_KEY (x-functions-key).
 var apiUrl = Environment.GetEnvironmentVariable("RTK_API_URL")
-    ?? "https://rtk-ochestration-middleware-e9ebb3erg8cacbhh.westus3-01.azurewebsites.net/api/OptimizeCommand";
+    ?? "";
 
 if (args.Length == 0) return;
 
