@@ -175,6 +175,32 @@ public sealed class ContextPrunerTests
             File.Delete(tempFile);
         }
     }
+
+    [Fact]
+    public void Prune_includes_targeted_line_window_when_line_is_provided()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllLines(
+            tempFile,
+            Enumerable.Range(1, 20).Select(i => $"line {i}"));
+
+        try
+        {
+            var pruner = new ContextPruner();
+
+            string pruned = pruner.Prune(tempFile, targetLine: 10, contextRadius: 2);
+
+            Assert.Contains("Targeted context window around line 10", pruned);
+            Assert.Contains("// L8: line 8", pruned);
+            Assert.Contains("// L10: line 10", pruned);
+            Assert.Contains("// L12: line 12", pruned);
+            Assert.DoesNotContain("// L7: line 7", pruned);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }
 
 public sealed class ContextPruningEngineTests
@@ -234,6 +260,38 @@ public sealed class ContextPruningEngineTests
             File.Delete(tempFile);
         }
     }
+
+    [Fact]
+    public void Prune_detects_line_reference_from_file_argument()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            public sealed class Worker
+            {
+                public void Run()
+                {
+                    Console.WriteLine("line four");
+                }
+            }
+            """);
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([$"{tempFile}:4"], PruningStrategy.Agentic);
+
+            Assert.Equal([Path.GetFullPath(tempFile)], result.Files);
+            Assert.Contains("Targeted context window around line 4", result.PrunedContext);
+            Assert.Contains("Console.WriteLine", result.PrunedContext);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }
 
 public sealed class AwsLambdaClientTests
@@ -247,11 +305,15 @@ public sealed class AwsLambdaClientTests
             OriginalTokenCount: 100,
             PrunedTokenCount: 20);
 
-        AwsLambdaPayload payload = AwsLambdaClient.CreatePayload("cursor /tmp/demo.cs", context);
+        AwsLambdaPayload payload = AwsLambdaClient.CreatePayload(
+            "cursor /tmp/demo.cs",
+            context,
+            PruningStrategy.Agentic);
 
         Assert.Equal("cursor /tmp/demo.cs", payload.Command);
         Assert.Equal("public sealed class Demo { }", payload.PrunedContext);
         Assert.Equal(100, payload.OriginalTokenCount);
         Assert.Equal(20, payload.PrunedTokenCount);
+        Assert.Equal("agentic", payload.PruningStrategy);
     }
 }

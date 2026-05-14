@@ -28,12 +28,18 @@ public sealed class ContextPruner
         RegexOptions.Compiled);
 
     public string Prune(string filePath)
+        => Prune(filePath, targetLine: null);
+
+    public string Prune(string filePath, int? targetLine, int contextRadius = 5)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
 
         string[] lines = File.ReadAllLines(filePath);
         var output = new StringBuilder();
         output.AppendLine($"// Pruned context for: {filePath}");
+
+        if (targetLine is > 0)
+            AppendTargetedWindow(output, lines, targetLine.Value, contextRadius);
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -102,6 +108,23 @@ public sealed class ContextPruner
         }
 
         return startIndex;
+    }
+
+    private static void AppendTargetedWindow(
+        StringBuilder output,
+        string[] lines,
+        int targetLine,
+        int contextRadius)
+    {
+        int lineIndex = Math.Clamp(targetLine - 1, 0, Math.Max(0, lines.Length - 1));
+        int start = Math.Max(0, lineIndex - contextRadius);
+        int end = Math.Min(lines.Length - 1, lineIndex + contextRadius);
+
+        output.AppendLine($"// Targeted context window around line {targetLine}:");
+        for (int i = start; i <= end; i++)
+            output.AppendLine($"// L{i + 1}: {lines[i].TrimEnd()}");
+
+        output.AppendLine();
     }
 
     private static string Normalize(string line)

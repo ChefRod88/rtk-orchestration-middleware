@@ -60,7 +60,7 @@ JObject result;
 try
 {
     result = await new AwsLambdaClient(client)
-        .OptimizeAsync(apiUrl, fullCommand, contextPruning, functionKey);
+        .OptimizeAsync(apiUrl, fullCommand, contextPruning, hook.PruningStrategy, functionKey);
 }
 catch (AwsLambdaRequestException ex)
 {

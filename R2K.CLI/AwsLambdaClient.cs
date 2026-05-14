@@ -12,6 +12,7 @@ public sealed class AwsLambdaClient(HttpClient httpClient)
         string endpoint,
         string command,
         ContextPruningResult context,
+        PruningStrategy strategy,
         string? functionKey,
         CancellationToken cancellationToken = default)
     {
@@ -19,7 +20,7 @@ public sealed class AwsLambdaClient(HttpClient httpClient)
             HttpMethod.Post,
             endpoint)
         {
-            Content = JsonContent.Create(CreatePayload(command, context)),
+            Content = JsonContent.Create(CreatePayload(command, context, strategy)),
         };
 
         if (!string.IsNullOrWhiteSpace(functionKey))
@@ -34,12 +35,16 @@ public sealed class AwsLambdaClient(HttpClient httpClient)
         return JObject.Parse(responseBody);
     }
 
-    public static AwsLambdaPayload CreatePayload(string command, ContextPruningResult context)
+    public static AwsLambdaPayload CreatePayload(
+        string command,
+        ContextPruningResult context,
+        PruningStrategy strategy)
         => new(
             command,
             context.PrunedContext,
             context.OriginalTokenCount,
-            context.PrunedTokenCount);
+            context.PrunedTokenCount,
+            strategy.ToString().ToLowerInvariant());
 
     public static void PrintOptimizedOutput(JObject response, ContextPruningResult context)
     {
@@ -91,7 +96,8 @@ public sealed record AwsLambdaPayload(
     [property: JsonPropertyName("command")] string Command,
     [property: JsonPropertyName("pruned_context")] string PrunedContext,
     [property: JsonPropertyName("original_token_count")] int OriginalTokenCount,
-    [property: JsonPropertyName("pruned_token_count")] int PrunedTokenCount);
+    [property: JsonPropertyName("pruned_token_count")] int PrunedTokenCount,
+    [property: JsonPropertyName("pruning_strategy")] string PruningStrategy);
 
 public sealed class AwsLambdaRequestException(
     HttpStatusCode statusCode,
