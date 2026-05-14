@@ -24,7 +24,6 @@
 - [CI/CD](#cicd)
 - [Roadmap](#roadmap)
 - [Cursor MCP docs and server](#cursor-mcp-docs-and-server-registration)
-
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -100,7 +99,6 @@ git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
 | [`extras/CURSOR_MCP_DOCS_SETUP.txt`](extras/CURSOR_MCP_DOCS_SETUP.txt) | Step-by-step: **Cursor Features → Docs** MCP URL index + Composer prompt snippets. |
 | [`.cursor/mcp.json.example`](.cursor/mcp.json.example) | Copy/adapt → **`~/.cursor/mcp.json`** or `.cursor/mcp.json` (**gitignored**) to register the server in Cursor. |
 | [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc) | Project rule cheat sheet (`@`-reference in Composer alongside indexed **MCP** doc). |
-
 | [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) | **`TokenLogs`** bootstrap / **`Timestamp`** column patch. |
 
 ---
@@ -110,7 +108,7 @@ git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
 - **.NET 8 SDK** for **`R2K.Backend`** and **`R2K.CLI`** (newer SDKs can build **net8.0** target frameworks side by side).
 - **Azure Function App** + optionally **Azure SQL** for persisted telemetry.
 - **Linux x64** (or compatible glibc environment) for the published **`rtk`** binary.
-- **Node.js 18+** only for the MCP stub—not included in the default Dev Container image unless you add a **feature** or install Node manually.
+- **Node.js 18+** + **npm** for MCP (both **`extras/mcp-*/`** trees). Servers use **`@modelcontextprotocol/sdk` `^1.29`** (the old **`@modelcontextprotocol/server`** package is obsolete on npm). Each folder commits **`package-lock.json`** → prefer **`npm ci`** in CI/automation. Default Dev Containers may ship **without** Node—add the **feature** in roadmap **X5** or install **`nodejs`/`npm`** (e.g. apt) manually.
 
 ---
 
@@ -172,11 +170,12 @@ The **`func-out/`** directory is listed in **[`.gitignore`](.gitignore)** so it 
 ### Cursor MCP docs and server registration
 
 1. **Index official MCP spec in Cursor Docs** — follow **[`extras/CURSOR_MCP_DOCS_SETUP.txt`](extras/CURSOR_MCP_DOCS_SETUP.txt)** (Settings → Features → Docs → **`https://modelcontextprotocol.io/introduction`** named **MCP**).
-2. **Build TS MCP bridge** (`run_rtk_command`):
+2. **Install & build MCP** (`run_rtk_command`):
 
 ```bash
-cd extras/mcp-rtk-server && npm install && npm run build
+cd extras/mcp-rtk-server && npm ci && npm run build
 ```
+*(Use **`npm install`** instead of **`npm ci`** if you deliberately want to refresh the lockfile.)*
 
 3. **Tell Cursor where the server lives** — duplicate [`.cursor/mcp.json.example`](.cursor/mcp.json.example), fix the **absolute** `args[0]` path to `dist/index.js`, set **`RTK_*` env**, save as **`~/.cursor/mcp.json`** *(global)* **or** **`.cursor/mcp.json`** *(workspace)*. Real files with secrets are **gitignored**—keep the example sanitized.
 4. **Restart Cursor**. Toggle the server under **Settings → Tools & MCP** if it does not connect immediately.
@@ -184,7 +183,7 @@ cd extras/mcp-rtk-server && npm install && npm run build
 Minimal JS stub (**`rtk_invoke`**) remains available:
 
 ```bash
-cd extras/mcp-stdio-rtk-stub && npm install
+cd extras/mcp-stdio-rtk-stub && npm ci
 # command "node", args: ["…/extras/mcp-stdio-rtk-stub/server.mjs"]
 ```
 
@@ -196,6 +195,7 @@ cd extras/mcp-stdio-rtk-stub && npm install
 |----------|--------|---------|
 | `RTK_API_URL` | CLI env | Full **`https://`** URL to **`OptimizeCommand`**. |
 | `RTK_FUNCTION_KEY` | CLI env | Populates **`x-functions-key`** for **`AuthorizationLevel.Function`**. |
+| `RTK_CLI_PATH` | MCP **`mcp.json` → `env`**, optional | Overrides **`/usr/local/bin/rtk`** for MCP tool subprocesses (**`run_rtk_command`**, **`rtk_invoke`**). |
 | `SqlConnectionString` | Function app settings / `local.settings.json` | Enables **`TokenLogs`** insert + **`SUM`** for session totals. |
 | `AzureWebJobsStorage` | Function settings | Azure Functions platform requirement. |
 | `FUNCTIONS_WORKER_RUNTIME` | Function settings | **`dotnet-isolated`** for this worker. |
@@ -237,7 +237,7 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | S4 | **GitHub Actions** fixed for **Functions** (**`dotnet publish`** + **`Azure/functions-action`**), not generic Web Apps + wrong SDK line. Workflow status badge on README. |
 | S5 | **xUnit** coverage for tokenizer + optimizer; **`local.settings.json` / `func-out` / `node_modules` / MCP `dist/`** git hygiene. |
 | S6 | **MCP Cursor integration assets**: **`extras/CURSOR_MCP_DOCS_SETUP.txt`**, rule [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc), example [`.cursor/mcp.json.example`](.cursor/mcp.json.example) (real **`mcp.json` gitignored**). |
-| S7 | **MCP servers**: JS stub **`rtk_invoke`** ([`extras/mcp-stdio-rtk-stub`](extras/mcp-stdio-rtk-stub)); TypeScript **`run_rtk_command`** ([`extras/mcp-rtk-server`](extras/mcp-rtk-server)) using **`@modelcontextprotocol/server`** stdio + **`shell-quote`** argv tokenization. |
+| S7 | **MCP servers** on **`@modelcontextprotocol/sdk`**: JS **`rtk_invoke`** ([`extras/mcp-stdio-rtk-stub`](extras/mcp-stdio-rtk-stub)); TS **`run_rtk_command`** ([`extras/mcp-rtk-server`](extras/mcp-rtk-server)) + **`shell-quote`** tokenization; **`package-lock.json`** in both extras for reproducible **`npm ci`**. |
 
 ### Now (next 1–2 iterations)
 
@@ -257,7 +257,7 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | X1 | CLI HTTP resilience | Catch non-2xx without raw exception: print **status + problem body** before exit (complements **N5** empty-URL guard). |
 | X2 | CI quality gate | **`dotnet test`** on **`R2K.Backend.Tests`** in Actions; optional **`dotnet format`** / analyzers gates. |
 | X3 | Observability | Application Insights wired to Worker + dependency tracking on SQL failures; **`X-Correlation-Id`** from CLI→Function for log join (pairs with **N4** **`SessionId`**). |
-| X4 | MCP CI / packaging | **`npm ci && npm run build`** for **`extras/mcp-rtk-server`** on **`ubuntu-latest` + Node 20**; cache artifacts; optional pre-release npm tarball. |
+| X4 | MCP CI / packaging | GitHub Actions job: **`actions/setup-node` + `npm ci` + `npm run build`** for **`extras/mcp-rtk-server`** (**lockfiles already committed**); cache `~/.npm`; optional nightly npm tarball publish. |
 | X5 | Dev Container + Node | Optional **`devcontainer.json` feature** (`ghcr.io/devcontainers/features/node`) so **MCP** **`npm install`** / **`npm run build`** work OOTB in Codespaces. |
 
 ### Later (platform & product)
@@ -280,6 +280,7 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | **401 / 403** calling Function | Missing/wrong **`RTK_FUNCTION_KEY`** vs **`AuthorizationLevel.Function`**. |
 | **`npm` not found** for MCP stub | Install Node/npm or add **`ghcr.io/devcontainers/features/node`** to devcontainer features. |
 | **`total_session_savings` stays 0** | Missing **`SqlConnectionString`**, failed insert, firewall, or TLS—check logs. |
+| **`npm` fails: `No matching version … @modelcontextprotocol/server`** | That package was removed/renamed — this repo uses **`@modelcontextprotocol/sdk`**. Pull latest `main`, then **`rm -rf node_modules && npm ci`** inside **`extras/mcp-rtk-server`** (and the JS stub folder). |
 | Alias breaks tooling | Bypass with **`command git`** or **`/usr/bin/git`**. |
 
 ---
