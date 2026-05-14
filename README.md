@@ -5,6 +5,28 @@
   <sub>Token-aware CLI routing for agents and developers, backed by .NET&nbsp;8 Azure Functions and Azure SQL telemetry.</sub>
 </p>
 
+<p align="center">
+  <a href="https://dotnet.microsoft.com/download/dotnet/8.0"><img alt=".NET 8" src="https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet" /></a>
+  <a href="https://learn.microsoft.com/azure/azure-functions/functions-overview"><img alt="Azure Functions" src="https://img.shields.io/badge/Azure_Functions-isolated_worker-0089D6?style=flat-square&logo=microsoft-azure" /></a>
+</p>
+
+<details>
+<summary><strong>On this page</strong></summary>
+
+- [What this is](#what-this-is)
+- [Critical: Function App, not Web App](#critical-use-an-azure-function-app-not-a-web-app)
+- [Repository layout](#repository-layout)
+- [Prerequisites](#prerequisites)
+- [Quick start (local / Codespace)](#quick-start-local--codespace)
+- [Configuration reference](#configuration-reference)
+- [Database](#database)
+- [CI/CD](#cicd)
+- [Roadmap](#roadmap)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+</details>
+
 ---
 
 ## What this is
@@ -13,23 +35,23 @@
 
 - counts tokens with **Tiktoken** (GPT-family encodings),
 - condenses the command string (whitespace + duplicate flags),
-- persists **OriginalTokens**, **OptimizedTokens**, **SavingsPercent**, and **Command** to **`TokenLogs`** in **Azure SQL** (when configured),
+- persists **OriginalTokens**, **OptimizedTokens**, **SavingsPercent**, **Command**, and **Timestamp** to **`TokenLogs`** in **Azure SQL** (when configured),
 - returns JSON the CLI uses to **run the optimized command** locally and **print savings**.
 
 ```mermaid
 flowchart LR
   subgraph client [Client layer]
-    Bash[Bash aliases]
-    RTK[rtk CLI]
+    Bash[Bash_aliases]
+    RTK[rtk_CLI]
     Bash --> RTK
   end
   subgraph cloud [Azure]
-    Fn[Function App .NET isolated]
-    Sql[(Azure SQL)]
-    RTK -->|HTTPS POST JSON| Fn
+    Fn[Function_App_isolated]
+    Sql[(Azure_SQL)]
+    RTK -->|HTTPS_POST_JSON| Fn
     Fn --> Sql
   end
-  RTK -->|bash -c| Exec[Local execution]
+  RTK -->|bash_minus_c| Exec[Local_execution]
   Fn -->|JSON| RTK
 ```
 
@@ -38,19 +60,27 @@ flowchart LR
 ## Critical: use an Azure Function App, not a Web App
 
 > **This repository deploys a .NET 8 *isolated-process* Azure Functions app.**  
-> It is **not** an ASP.NET Core web host for `webapps-deploy`-style “Web App only” targets.
+> It is **not** an ASP.NET Core web host meant for **`azure/webapps-deploy`** toward a standalone **Web App** with no Functions runtime.
 
 | If you provision… | Result |
 |-------------------|--------|
-| **Azure Function App** (Consumption, Flex Consumption, Elastic Premium, or dedicated with Functions runtime) | Matches the project. CI uses [`Azure/functions-action`](.github/workflows/main_rtk-ochestration-middleware.yml) + `dotnet publish` of [`R2K.Backend`](R2K.Backend/R2K.Backend.csproj). |
-| **Azure App Service “Web App”** (generic site, no Functions host) | **Wrong host.** Deploy will not map to this worker model; use the Azure portal or CLI to **create a Function App** and point GitHub Actions OIDC + `app-name` at that resource. |
+| **Azure Function App** (Consumption, Flex Consumption, Elastic Premium, or Functions-enabled dedicated plan) | Matches the project. CI uses [`Azure/functions-action`](.github/workflows/main_rtk-ochestration-middleware.yml) + `dotnet publish` of [`R2K.Backend`](R2K.Backend/R2K.Backend.csproj). |
+| **Azure App Service “Web App”** (generic site, no Functions host) | **Wrong host.** Provision a **Function App** instead, then point workflow **`app-name`** and OIDC/RBAC at that resource. |
 
 **Checklist before first deploy**
 
-1. In Azure: **Create resource → Function App** (runtime stack **.NET**, version aligned with **net8.0** isolated where offered).
-2. Storage account for Functions (queue/timer triggers or host metadata, per plan).
-3. Application settings (at minimum **`AzureWebJobsStorage`**, **`FUNCTIONS_WORKER_RUNTIME=dotnet-isolated`**, optional **`SqlConnectionString`**).
-4. GitHub Actions: workload identity / OIDC secrets must have permission to deploy to **that Function App** (not only a generic web app RBAC role).
+1. Azure Portal: **Create resource → Function App** → runtime **.NET**, version aligned with **.NET 8 isolated** worker where offered.
+2. **Storage**: host uses **`AzureWebJobsStorage`** per plan requirements.
+3. **Application settings**: at minimum **`AzureWebJobsStorage`**, **`FUNCTIONS_WORKER_RUNTIME=dotnet-isolated`**, optional **`SqlConnectionString`**, **`FUNCTIONS_EXTENSION_VERSION`** as required by your plan.
+4. **GitHub → Azure**: federated OIDC / secrets must be allowed to deploy to the **Function App** (Contributor / Website Contributor patterns as appropriate—not only an unrelated Web App).
+
+**Repository URL**
+
+GitHub may show a redirect from the legacy name—canonical clone:
+
+```bash
+git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
+```
 
 ---
 
@@ -59,44 +89,48 @@ flowchart LR
 | Path | Role |
 |------|------|
 | [`R2K.Backend/`](R2K.Backend/) | Isolated-process Azure Function (`OptimizeCommand`), Tiktoken + optimization services, Dapper/SQL. |
-| [`R2K.Backend.Tests/`](R2K.Backend.Tests/) | Unit tests (xUnit; test project targets `net9.0` runner where the SDK image only ships the .NET 9 host). |
-| [`R2K.CLI/`](R2K.CLI/) | .NET 8 console app—publish as **linux-x64** self-contained single-file → `rtk`. |
-| [`scripts/install-rtk.sh`](scripts/install-rtk.sh) | Build + install `rtk` to `/usr/local/bin`. |
-| [`extras/mcp-stdio-rtk-stub/`](extras/mcp-stdio-rtk-stub/) | Optional **MCP** stdio bridge (Node.js) exposing tool `rtk_invoke`. |
-| [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) | SQL bootstrap for `TokenLogs`. |
+| [`R2K.Backend.Tests/`](R2K.Backend.Tests/) | Unit tests (xUnit; **`net9.0`** entry assembly when the tooling host is .NET 9—library under test remains **`net8.0`**). |
+| [`R2K.CLI/`](R2K.CLI/) | .NET 8 console app; publish **linux-x64** self-contained single-file → **`rtk`**. |
+| [`scripts/install-rtk.sh`](scripts/install-rtk.sh) | Builds CLI and **`sudo install`** to **`/usr/local/bin/rtk`**. |
+| [`extras/mcp-stdio-rtk-stub/`](extras/mcp-stdio-rtk-stub/) | Optional **MCP** stdio server (`rtk_invoke` tool); requires **Node/npm** locally. |
+| [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) | **`TokenLogs`** bootstrap / **`Timestamp`** column patch. |
 
 ---
 
 ## Prerequisites
 
-- **.NET 8 SDK** (for `R2K.Backend`, `R2K.CLI`; Codespace image may also include newer SDKs—8.0 must be available for publish).
-- **Azure Function App** + **Azure SQL** (serverless or provisioned) when you want cloud telemetry.
-- **Linux** shell for the published CLI (linux-x64 single-file).
-- **Node.js 18+** only if you use the MCP stub.
+- **.NET 8 SDK** for **`R2K.Backend`** and **`R2K.CLI`** (newer SDKs can build **net8.0** target frameworks side by side).
+- **Azure Function App** + optionally **Azure SQL** for persisted telemetry.
+- **Linux x64** (or compatible glibc environment) for the published **`rtk`** binary.
+- **Node.js 18+** only for the MCP stub—not included in the default Dev Container image unless you add a **feature** or install Node manually.
 
 ---
 
 ## Quick start (local / Codespace)
 
 ```bash
-git clone https://github.com/ChefRod88/r2k-orchestration-middleware.git
-cd r2k-orchestration-middleware
+git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
+cd rtk-orchestration-middleware
 ```
 
-**Build & install the interceptor CLI**
+**CLI: build + install**
 
 ```bash
 bash scripts/install-rtk.sh
 ```
 
-**Point the CLI at your function (required—no baked-in production URL)**
+**Environment (required; no embedded production URL)**
+
+Set in **`~/.bashrc`**, shell profile, or **Codespace / GitHub Codespaces secrets → env** injection:
 
 ```bash
 export RTK_API_URL='https://<YOUR-FUNCTION-APP>.azurewebsites.net/api/OptimizeCommand'
-export RTK_FUNCTION_KEY='<function-or-host-key>'   # if the trigger uses AuthorizationLevel.Function
+export RTK_FUNCTION_KEY='<function-or-host-key>'   # AuthorizationLevel.Function
 ```
 
-**Optional shell interception** (add to `~/.bashrc`; only in interactive shells):
+Reload: **`source ~/.bashrc`** (interactive sessions).
+
+**Optional aliases** (`git` interception can confuse scripts—use `\git` when needed):
 
 ```bash
 # RTK Automation Hooks
@@ -105,23 +139,33 @@ alias git='rtk git'
 alias npx='rtk npx'
 ```
 
-```bash
-source ~/.bashrc
-```
-
-**Run the function host locally** (from `R2K.Backend`; create `local.settings.json` from portal settings—file is **gitignored**):
+**Function host locally** — add **`local.settings.json`** under **`R2K.Backend/`** mirroring portal values (gitignored):
 
 ```bash
-cd R2K.Backend
-dotnet run
+cd R2K.Backend && dotnet run
 ```
 
-Forward **7071** in Codespaces ([`devcontainer`](.devcontainer/devcontainer.json)).
+Forward **7071** in Codespaces ([`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json)).
 
 **Tests**
 
 ```bash
 cd R2K.Backend.Tests && dotnet test
+```
+
+**Smoke publish folder** (optional; output is ignored by git):
+
+```bash
+dotnet publish R2K.Backend/R2K.Backend.csproj -c Release -o ./func-out
+```
+
+The **`func-out/`** directory is listed in **[`.gitignore`](.gitignore)** so it never appears as a tracked artifact.
+
+**MCP stub**
+
+```bash
+cd extras/mcp-stdio-rtk-stub && npm install
+# Cursor MCP: command "node", args: ["<repo>/extras/mcp-stdio-rtk-stub/server.mjs"]
 ```
 
 ---
@@ -130,48 +174,71 @@ cd R2K.Backend.Tests && dotnet test
 
 | Variable | Where | Purpose |
 |----------|--------|---------|
-| `RTK_API_URL` | CLI env | Full HTTPS URL to `OptimizeCommand`. |
-| `RTK_FUNCTION_KEY` | CLI env | Sends `x-functions-key` for `AuthorizationLevel.Function`. |
-| `SqlConnectionString` | Function App settings / `local.settings.json` | Enables Dapper inserts + session `SUM` aggregation. |
-| `AzureWebJobsStorage` | Function App settings / `local.settings.json` | Required by Azure Functions host. |
-| `FUNCTIONS_WORKER_RUNTIME` | Function App settings | Should be `dotnet-isolated` for this repo. |
+| `RTK_API_URL` | CLI env | Full **`https://`** URL to **`OptimizeCommand`**. |
+| `RTK_FUNCTION_KEY` | CLI env | Populates **`x-functions-key`** for **`AuthorizationLevel.Function`**. |
+| `SqlConnectionString` | Function app settings / `local.settings.json` | Enables **`TokenLogs`** insert + **`SUM`** for session totals. |
+| `AzureWebJobsStorage` | Function settings | Azure Functions platform requirement. |
+| `FUNCTIONS_WORKER_RUNTIME` | Function settings | **`dotnet-isolated`** for this worker. |
 
-Secrets: **`local.settings.json` is listed in [`.gitignore`](.gitignore)**—never commit it.
+**`local.settings.json`** must stay out of Git—see **[`.gitignore`](.gitignore)**.
 
 ---
 
 ## Database
 
-Run [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) against Azure SQL to create or patch **`TokenLogs`** (includes **`Timestamp`**; the app uses **`GETDATE()`** on insert).
+Apply [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) against **Azure SQL** so **`Timestamp`** exists; the runtime insert uses **`GETDATE()`**.
 
-If `SqlConnectionString` is unset, the HTTP function still returns optimized JSON and metrics, but **session total** from SQL stays **0** and nothing is written.
+Without **`SqlConnectionString`**, responses still carry per-request metrics while **`total_session_savings`** reflects no SQL aggregation (**`0`**).
 
 ---
 
 ## CI/CD
 
-On push to **`main`**, [`.github/workflows/main_rtk-ochestration-middleware.yml`](.github/workflows/main_rtk-ochestration-middleware.yml):
+Push **`main`** runs [`.github/workflows/main_rtk-ochestration-middleware.yml`](.github/workflows/main_rtk-ochestration-middleware.yml):
 
-1. Restores and **publishes** [`R2K.Backend/R2K.Backend.csproj`](R2K.Backend/R2K.Backend.csproj) with **.NET 8**.
-2. Deploys the artifact with **`Azure/functions-action@v1`** to the Function App named **`rtk-ochestration-middleware`** (adjust **`app-name`** to match your Azure resource).
-
-Secrets names in the workflow mirror classic App Service templates; ensure the Azure AD app registration / federated credential is authorized on the **Function App** resource.
+1. **Restore & publish** [`R2K.Backend/R2K.Backend.csproj`](R2K.Backend/R2K.Backend.csproj) with **SDK 8.0.x**.
+2. **`Azure/functions-action@v1`** deploys **`func-publish`** artifact to **`app-name: rtk-ochestration-middleware`** — change **`app-name`** to your Function App resource.
 
 ---
 
 ## Roadmap
 
-Rough priority order—subject to reprioritization.
+Status-style rows first, then forward-looking backlog. Order is directional, not contractual.
 
-| Phase | Theme | Items |
-|-------|--------|--------|
-| **Now** | Deploy hygiene | Confirm Function App SKU + storage; align `app-name` with live Azure; document host key rotation. |
-| **Next** | Hardening | CLI: clear errors when `RTK_API_URL` is missing; optional `AZURE_CLIENT_ID`/`DefaultAzureCredential` path for keyless dev. |
-| **Next** | Observability | Application Insights + structured logging; correlation id from CLI → Function. |
-| **Next** | Data | EF Core migration path *or* Flyway/SQL change scripts for `TokenLogs` indexes (e.g. `Timestamp` DESC). |
-| **Later** | Platform | IaC (Bicep/Terraform) for Function App + SQL + RBAC + GitHub OIDC. |
-| **Later** | MCP & agents | Ship `mcp-stdio-rtk-stub` with versioned npm release; Cursor `mcp.json` recipe in docs. |
-| **Later** | Product | Policy packs (per-tool optimization rules), org-level dashboards, quotas / rate limits on `OptimizeCommand`. |
+### Shipped (baseline)
+
+| ID | Capability |
+|----|---------------|
+| S1 | .NET **8** isolated **`R2K.Backend`** with HTTP **`OptimizeCommand`**, Tiktoken counts, heuristic CLI rewrite, snake_case JSON for **`R2K.CLI`** compatibility. |
+| S2 | **Dapper** + **`Microsoft.Data.SqlClient`** telemetry to **`TokenLogs`** ( **`Timestamp`** ), aggregate session savings **`SUM`**. |
+| S3 | **`rtk`** single-file CLI, **`scripts/install-rtk.sh`**, **`RTK_*`** env overrides, optional bash aliases documented. |
+| S4 | **GitHub Actions** fixed for **Functions** (**`dotnet publish`** + **`Azure/functions-action`**), not generic Web Apps + .NET **10**. |
+| S5 | **xUnit** coverage for tokenizer + optimizer; **`local.settings.json` / `func-out`** git hygiene. |
+| S6 | **MCP** reference implementation under **`extras/mcp-stdio-rtk-stub`** (manual **`npm install`**). |
+
+### Now (next 1–2 iterations)
+
+| ID | Focus | Outcome |
+|----|--------|---------|
+| N1 | Azure alignment | Provision / verify **Function App** (correct plan + **`AzureWebJobsStorage`**); confirm workflow **`app-name`** + RBAC/OIDC deploy succeeds end-to-end. |
+| N2 | Secrets ergonomics | Key Vault references or documented rotation for **`SqlConnectionString`** + function keys; align portal settings with **`local.settings.json`** template snippet in wiki/issue. |
+
+### Next (engineering hardening)
+
+| ID | Focus | Outcome |
+|----|--------|---------|
+| X1 | CLI resilience | Validate **`RTK_API_URL`** nonempty with actionable stderr; graceful HTTP failure messages (status + body excerpt). |
+| X2 | CI quality gate | **`dotnet test`** step on **`R2K.Backend.Tests`** in Actions; optional **`dotnet format`** / analyzers gates. |
+| X3 | Observability | Application Insights wired to Worker + dependency tracking on SQL failures; **`X-Correlation-Id`** from CLI→Function for log join. |
+
+### Later (platform & product)
+
+| ID | Focus | Outcome |
+|----|--------|---------|
+| L1 | Declarative infra | IaC (**Bicep** / Terraform) describing Function App + storage + SQL + RBAC + GitHub federated credential. |
+| L2 | Data evolution | Indexed **`Timestamp`**, partitioning strategy, archival job; optionally **Flyway**/DbUp migration runner. |
+| L3 | MCP productization | **`@scope/mcp-r2k` npm** or bundled container; pinned Cursor **`mcp.json`** recipe **+** troubleshooting runbook. |
+| L4 | Policy & scale | Plugin-style optimization rules (**npm**/ **git**/ **pnpm** bundles), quotas / JWT / Managed Identity boundary on **`OptimizeCommand`**, org dashboards. |
 
 ---
 
@@ -179,19 +246,21 @@ Rough priority order—subject to reprioritization.
 
 | Symptom | Likely cause |
 |---------|----------------|
-| Deploy action fails with host mismatch | Target is a **Web App** instead of **Function App**, or wrong `app-name`. |
-| CLI 401 from Function | Set `RTK_FUNCTION_KEY` or relax auth in dev (not recommended for production). |
-| `total_session_savings` always `0` | `SqlConnectionString` unset, insert failed, or DB unreachable—check Function logs. |
-| `git` alias breaks scripts | Use `\git` / `command git` or `/usr/bin/git` when you must bypass `rtk`. |
+| Deploy action fails immediately | **`app-name`** points at non-Function SKU, wrong subscription, or expired OIDC. |
+| **`rtk`** fails before HTTP | **`RTK_API_URL`** unset/placeholder; **`source ~/.bashrc`**. |
+| **401 / 403** calling Function | Missing/wrong **`RTK_FUNCTION_KEY`** vs **`AuthorizationLevel.Function`**. |
+| **`npm` not found** for MCP stub | Install Node/npm or add **`ghcr.io/devcontainers/features/node`** to devcontainer features. |
+| **`total_session_savings` stays 0** | Missing **`SqlConnectionString`**, failed insert, firewall, or TLS—check logs. |
+| Alias breaks tooling | Bypass with **`command git`** or **`/usr/bin/git`**. |
 
 ---
 
 ## License
 
-See repository default or add a `LICENSE` file if you want explicit terms.
+Add a **`LICENSE`** file (MIT, Apache-2.0, etc.) when you finalize distribution terms.
 
 ---
 
 <p align="center">
-  <sub>Built for Mission 2026 orchestration—token-smart CLIs without giving up local execution.</sub>
+  <sub>Mission&nbsp;2026 — token-aware orchestration without giving up local execution.</sub>
 </p>
