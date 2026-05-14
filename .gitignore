@@ -1,0 +1,3 @@
+# .NET / MSBuild output (any directory depth)
+**/bin/
+**/obj/
