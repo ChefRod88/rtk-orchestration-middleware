@@ -1,7 +1,7 @@
 # RTK Orchestration Middleware
 
 <p align="center">
-  <strong>Intercept · optimize · execute · measure</strong><br/>
+  <strong>Intercept · Optimize · Execute · Measure</strong><br/>
   <sub>Token-aware CLI routing for agents and developers, backed by .NET&nbsp;8 Azure Functions and Azure SQL telemetry.</sub>
 </p>
 
