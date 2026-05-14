@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://dotnet.microsoft.com/download/dotnet/8.0"><img alt=".NET 8" src="https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet" /></a>
   <a href="https://learn.microsoft.com/azure/azure-functions/functions-overview"><img alt="Azure Functions" src="https://img.shields.io/badge/Azure_Functions-isolated_worker-0089D6?style=flat-square&logo=microsoft-azure" /></a>
+  <a href="https://github.com/ChefRod88/rtk-orchestration-middleware/actions/workflows/main_rtk-ochestration-middleware.yml?query=branch%3Amain"><img alt="GitHub Actions deploy" src="https://img.shields.io/github/actions/workflow/status/ChefRod88/rtk-orchestration-middleware/main_rtk-ochestration-middleware.yml?label=deploy&logo=github&branch=main&style=flat-square" /></a>
 </p>
 
 <details>
