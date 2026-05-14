@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\R2K.Backend\R2K.Backend.csproj" />
+    <ProjectReference Include="..\R2K.CLI\R2K.CLI.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,5 @@
 using R2K.Backend;
+using R2K.CLI;
 using Tiktoken;
 
 namespace R2K.Backend.Tests;
@@ -126,5 +127,52 @@ public sealed class PromptOptimizationServiceTests
         Assert.Equal("please fix this", metrics.OptimizedPrompt);
         Assert.True(metrics.TokensOriginal >= metrics.TokensOptimized);
         Assert.Equal(metrics.TokensOriginal - metrics.TokensOptimized, metrics.TokensSaved);
+    }
+}
+
+public sealed class ContextPrunerTests
+{
+    [Fact]
+    public void Prune_returns_structural_context_without_method_body()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            using System;
+
+            namespace Demo;
+
+            public sealed class Worker
+            {
+                public string Name { get; init; } = "default";
+
+                public async Task RunAsync(string input)
+                {
+                    Console.WriteLine(input);
+                    await Task.Delay(100);
+                    Console.WriteLine("done");
+                }
+            }
+            """);
+
+        try
+        {
+            var pruner = new ContextPruner();
+
+            string pruned = pruner.Prune(tempFile);
+
+            Assert.Contains("using System;", pruned);
+            Assert.Contains("namespace Demo;", pruned);
+            Assert.Contains("public sealed class Worker", pruned);
+            Assert.Contains("public async Task RunAsync(string input) {", pruned);
+            Assert.Contains("// ... [logic removed] ...", pruned);
+            Assert.DoesNotContain("Task.Delay", pruned);
+            Assert.DoesNotContain("Console.WriteLine", pruned);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 }
