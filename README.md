@@ -267,7 +267,7 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | L1 | Declarative infra | IaC (**Bicep** / Terraform) describing Function App + storage + SQL + RBAC + GitHub federated credential. |
 | L2 | Data evolution | Indexed **`Timestamp`**, partitioning strategy, archival job; optionally **Flyway**/DbUp migration runner. |
 | L3 | MCP productization | Published **`@scope/mcp-r2k`** (or Cursor Marketplace listing), semantic versioning, signed containers, security review of **`shell-quote` → spawn** path; multi-tool surface (e.g. dry-run optimize without execute). |
-| L4 | Policy & scale | Plugin-style optimization rules (**npm** / **git** / **pnpm** bundles), quotas / JWT / Managed Identity boundary on **`OptimizeCommand`**, org dashboards. |
+| L4 | Policy & scale | Deeper CLI optimization (true redundant-flag / noop-arg stripping beyond adjacent dedupe); plugin bundles per toolchain; quotas / JWT / Managed Identity on **`OptimizeCommand`**, org dashboards. |
 
 ---
 
