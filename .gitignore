@@ -1,3 +1,6 @@
 # .NET / MSBuild output (any directory depth)
 **/bin/
 **/obj/
+
+# Azure Functions — never commit local secrets / connection strings
+**/local.settings.json
