@@ -6,5 +6,5 @@
     { "command": "npx", "enabled": true, "aggressive": false }
   ],
   "telemetry_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
-  "prompt_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt"
+  "prompt_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand"
 }

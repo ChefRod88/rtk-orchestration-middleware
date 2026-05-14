@@ -6,7 +6,7 @@
       "env": {
         "RTK_CLI_PATH": "/usr/local/bin/rtk",
         "RTK_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
-        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt"
+        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand"
       }
     }
   }

@@ -261,6 +261,14 @@ Prompt optimizer endpoint:
 POST /OptimizePrompt
 ```
 
+The current AWS API Gateway may also multiplex prompt optimization through the existing route:
+
+```text
+POST /OptimizeCommand
+```
+
+When the request body contains `prompt` and not `command`, the AWS Lambda returns prompt metrics without executing anything. This keeps the prompt hook usable even before a separate API Gateway `POST /OptimizePrompt` route is created.
+
 Request:
 
 ```json
@@ -312,7 +320,7 @@ Example Cursor MCP configuration:
       "args": ["/workspaces/r2k-orchestration-middleware/extras/mcp-rtk-server/dist/index.js"],
       "env": {
         "RTK_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
-        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt",
+        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
         "RTK_CLI_PATH": "/usr/local/bin/rtk"
       }
     }

@@ -3,6 +3,7 @@ using Amazon.Lambda.APIGatewayEvents;
 using MySqlConnector;
 using Dapper;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Tiktoken;
 
 // This attribute tells Lambda to use System.Text.Json for serialization
@@ -95,8 +96,15 @@ public class Function
             && request.Path.EndsWith("/OptimizePrompt", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        return !string.IsNullOrWhiteSpace(request.Resource)
-            && request.Resource.EndsWith("/OptimizePrompt", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(request.Resource)
+            && request.Resource.EndsWith("/OptimizePrompt", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(request.Body))
+            return false;
+
+        var body = JObject.Parse(request.Body);
+        return body["prompt"] is not null && body["command"] is null;
     }
 
     private static OptimizationMetrics CalculateMetrics(string raw, string optimized)
