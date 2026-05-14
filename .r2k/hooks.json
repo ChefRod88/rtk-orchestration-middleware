@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "interceptors": [
+    { "command": "git", "enabled": true, "aggressive": true },
+    { "command": "npm", "enabled": true, "aggressive": false },
+    { "command": "npx", "enabled": true, "aggressive": false }
+  ],
+  "telemetry_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
+  "prompt_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt"
+}

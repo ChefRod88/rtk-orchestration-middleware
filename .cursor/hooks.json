@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/optimize-prompt.py",
+        "matcher": "UserPromptSubmit",
+        "timeout": 10,
+        "failClosed": false
+      }
+    ]
+  }
+}

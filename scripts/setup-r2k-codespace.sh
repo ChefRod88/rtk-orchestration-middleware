@@ -9,10 +9,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASHRC="${HOME}/.bashrc"
 RTK_API_URL_DEFAULT="https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand"
+RTK_PROMPT_API_URL_DEFAULT="https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt"
+RTK_SHIM_DIR="${HOME}/.local/share/r2k/shims"
+RTK_USER_CONFIG_DIR="${HOME}/.config/r2k"
 START_MARKER="# >>> r2k optimizer aliases >>>"
 END_MARKER="# <<< r2k optimizer aliases <<<"
 
 bash "${ROOT}/scripts/install-rtk.sh"
+
+mkdir -p "${RTK_SHIM_DIR}" "${RTK_USER_CONFIG_DIR}"
+cp "${ROOT}/.r2k/hooks.json" "${RTK_USER_CONFIG_DIR}/hooks.json"
+rm -f "${RTK_SHIM_DIR}"/*
+
+if command -v python3 >/dev/null 2>&1; then
+  mapfile -t enabled_interceptors < <(python3 - "${ROOT}/.r2k/hooks.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    config = json.load(handle)
+
+for interceptor in config.get("interceptors", []):
+    if interceptor.get("enabled", True):
+        command = interceptor.get("command")
+        if command:
+            print(command)
+PY
+)
+else
+  enabled_interceptors=(git npm npx)
+fi
+
+for command_name in "${enabled_interceptors[@]}"; do
+  ln -sf /usr/local/bin/rtk "${RTK_SHIM_DIR}/${command_name}"
+done
 
 tmp="$(mktemp)"
 if [[ -f "${BASHRC}" ]]; then
@@ -28,12 +58,16 @@ fi
 cat >> "${tmp}" <<EOF
 ${START_MARKER}
 export RTK_API_URL="${RTK_API_URL_DEFAULT}"
+export RTK_PROMPT_API_URL="${RTK_PROMPT_API_URL_DEFAULT}"
+export RTK_CLI_PATH="/usr/local/bin/rtk"
+export PATH="${RTK_SHIM_DIR}:\${PATH}"
 unset RTK_FUNCTION_KEY
 
 # Route explicit agent/automation commands through R2K.
 alias agent='rtk agent'
 
-# Common safe aliases for agent-run terminal commands.
+# Common safe aliases for agent-run terminal commands. Registry shims in
+# ${RTK_SHIM_DIR} also intercept these without aliases.
 alias git='rtk git'
 alias npm='rtk npm'
 alias npx='rtk npx'
@@ -44,4 +78,4 @@ mv "${tmp}" "${BASHRC}"
 
 echo "R2K Codespaces shell setup complete."
 echo "Open a new terminal or run: source ${BASHRC}"
-echo "Verify with: type agent && type git"
+echo "Verify with: type agent && type git && rtk --optimize-prompt 'optimize    this prompt'"

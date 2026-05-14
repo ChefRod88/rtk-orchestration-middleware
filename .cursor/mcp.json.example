@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "r2k-run-rtk-command": {
+    "r2k-optimizer": {
       "command": "node",
-      "args": ["/REPLACE_WITH_REPO_ABSOLUTE_PATH/extras/mcp-rtk-server/dist/index.js"],
+      "args": ["/workspaces/r2k-orchestration-middleware/extras/mcp-rtk-server/dist/index.js"],
       "env": {
         "RTK_CLI_PATH": "/usr/local/bin/rtk",
-        "RTK_API_URL": "https://YOUR_FUNCTION_APP.azurewebsites.net/api/OptimizeCommand",
-        "RTK_FUNCTION_KEY": "YOUR_FUNCTION_OR_HOST_KEY"
+        "RTK_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
+        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt"
       }
     }
   }

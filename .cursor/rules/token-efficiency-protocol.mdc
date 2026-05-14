@@ -1,0 +1,23 @@
+# Token Efficiency Protocol
+
+## Goal
+
+Keep Cursor Agent context focused and compact while preserving correctness.
+
+## Prompt Handling
+
+- Use the R2K prompt hook output when it provides an optimized prompt.
+- Prefer concise prompts with explicit files, symbols, and outcomes.
+- Do not remove meaningful whitespace inside code fences, commands, stack traces, or file paths.
+
+## Context Selection
+
+- Prefer specific file paths and narrow ranges over broad folder reads.
+- Do not read generated artifacts, build output, dependency folders, or logs unless the user asks or an error requires it.
+- For terminal history, focus on lines with actionable failures such as `Error:`, exceptions, non-zero exits, or failed test names.
+
+## Output Style
+
+- Keep responses compact unless the user asks for deeper explanation.
+- Show command results or requested answers first, then R2K savings when available.
+- Use code comments for local implementation notes only when they clarify non-obvious behavior.

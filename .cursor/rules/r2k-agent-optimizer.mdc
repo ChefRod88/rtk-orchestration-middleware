@@ -6,7 +6,10 @@ When working in this repository, route shell commands through the R2K optimizer 
 
 ## Required behavior
 
+- Use the `beforeSubmitPrompt` R2K hook output when it recommends an optimized prompt. That hook is for prompt text only and must never execute prompt contents as shell.
+- Prefer the MCP tool `run_rtk_command` for eligible terminal commands when it is available.
 - Prefer `rtk <command>` for terminal commands that execute project tooling, package managers, git, curl, AWS CLI, or other shell work.
+- If registry shims are installed, commands listed in `.r2k/hooks.json` can route through R2K without aliases.
 - If the shell has aliases loaded, `agent` must resolve to `rtk agent`.
 - For common terminal commands, prefer the configured aliases:
   - `agent='rtk agent'`
@@ -15,6 +18,7 @@ When working in this repository, route shell commands through the R2K optimizer 
   - `npx='rtk npx'`
 - After command execution, show the answer/result first, then report the RTK savings summary underneath.
 - Do not claim that R2K optimizes Cursor natural-language prompts directly. R2K optimizes terminal commands routed through `rtk`, aliases, or MCP.
+- For natural-language prompts, R2K can estimate and suggest prompt-token savings through Cursor hooks. Cursor may require the user to resubmit the optimized prompt.
 
 ## Allowed bypasses
 

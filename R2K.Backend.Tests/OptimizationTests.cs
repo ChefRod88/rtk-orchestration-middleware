@@ -79,3 +79,52 @@ public sealed class CommandOptimizationServiceTests
         Assert.Equal(0, metrics.EfficiencyPercent);
     }
 }
+
+public sealed class PromptOptimizationServiceTests
+{
+    private readonly Encoder encoder = TikTokenEncoder.CreateForModel(Models.Gpt4o);
+
+    [Fact]
+    public void Prompt_optimizer_collapses_noise_outside_code_fences()
+    {
+        const string raw = """
+              please      fix     this
+
+
+              and explain      briefly
+            """;
+
+        string optimized = PromptTextOptimizer.Optimize(raw);
+
+        Assert.Equal("please fix this\n\nand explain briefly", optimized);
+    }
+
+    [Fact]
+    public void Prompt_optimizer_preserves_code_fence_content()
+    {
+        const string raw = """
+            clean this:
+
+            ```bash
+            echo "keep    spacing"
+            ```
+            thanks
+            """;
+
+        string optimized = PromptTextOptimizer.Optimize(raw);
+
+        Assert.Contains("echo \"keep    spacing\"", optimized);
+    }
+
+    [Fact]
+    public void Prompt_service_reports_saved_tokens()
+    {
+        var svc = new PromptOptimizationService(encoder);
+
+        var metrics = svc.Compute("please      fix      this");
+
+        Assert.Equal("please fix this", metrics.OptimizedPrompt);
+        Assert.True(metrics.TokensOriginal >= metrics.TokensOptimized);
+        Assert.Equal(metrics.TokensOriginal - metrics.TokensOptimized, metrics.TokensSaved);
+    }
+}

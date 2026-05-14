@@ -15,6 +15,8 @@ The intended loop is:
 
 R2K optimizes terminal commands. It does not automatically rewrite Cursor's natural-language prompts to the model. In Cursor Agent mode, it helps when the commands the agent runs go through `rtk`, aliases, or the MCP tool.
 
+For live prompt-token efficiency, this repo also includes a Cursor `beforeSubmitPrompt` hook. The hook sends submitted prompt text to the R2K prompt optimizer, shows token counts, and blocks with an optimized prompt when savings are available. Cursor does not currently let this hook silently replace the submitted prompt in place, so the user reviews and resubmits the optimized prompt.
+
 ## Current Runtime Paths
 
 There are two backend paths in this repository:
@@ -119,6 +121,7 @@ SqlConnectionString=Server=database-rtk.cxkyikqe45yz.us-east-2.rds.amazonaws.com
 - `CommandOptimizationService` counts tokens using `Tiktoken`.
 - `CliCommandOptimizer` normalizes whitespace and removes adjacent duplicate flags.
 - `R2KOptimizer` exposes `OptimizeCommand`.
+- `R2KOptimizer` exposes `OptimizePrompt` for prompt cleanup and token-count estimates without shell execution.
 - `MySqlTelemetryConnection` builds a MySQL connection string from `SqlConnectionString` plus `DB_PASSWORD`.
 
 ### `R2K.DbProbe`
@@ -185,6 +188,8 @@ alias npm='rtk npm'
 alias npx='rtk npx'
 ```
 
+It also creates registry-driven shims under `~/.local/share/r2k/shims` from `.r2k/hooks.json` and prepends that directory to `PATH`. This lets commands such as `git`, `npm`, and `npx` route through `rtk` even without aliases. Flip an interceptor's `enabled` value in `.r2k/hooks.json` to control routing; rerun setup to refresh the shim files.
+
 Verify:
 
 ```bash
@@ -240,6 +245,51 @@ command dotnet build
 
 The project rule `.cursor/rules/r2k-agent-optimizer.mdc` also instructs agents to show the answer or command result first, then show RTK savings underneath.
 
+## Cursor Prompt Token Hook
+
+Project hook files:
+
+| File | Purpose |
+|------|---------|
+| `.cursor/hooks.json` | Registers the `beforeSubmitPrompt` hook. |
+| `.cursor/hooks/optimize-prompt.py` | Reads the submitted prompt, calls `rtk --optimize-prompt`, and returns Cursor hook JSON. |
+| `.r2k/hooks.json` | Registry for command shims plus optimizer endpoints. |
+
+Prompt optimizer endpoint:
+
+```text
+POST /OptimizePrompt
+```
+
+Request:
+
+```json
+{ "prompt": "please      clean     this prompt" }
+```
+
+Response:
+
+```json
+{
+  "optimized_prompt": "please clean this prompt",
+  "metrics": {
+    "tokens_original": 6,
+    "tokens_optimized": 4,
+    "tokens_saved": 2,
+    "savings_percentage": 33.33,
+    "total_session_savings": 2
+  }
+}
+```
+
+Local CLI optimize-only mode:
+
+```bash
+printf 'please      clean     this prompt' | rtk --optimize-prompt
+```
+
+The prompt hook fails open by default, so Cursor continues normally if `rtk` or the optimizer endpoint is unavailable.
+
 ## Cursor MCP Option
 
 The MCP server exposes a tool named `run_rtk_command`. It lets Cursor call `rtk` through MCP instead of relying only on shell aliases.
@@ -262,6 +312,7 @@ Example Cursor MCP configuration:
       "args": ["/workspaces/r2k-orchestration-middleware/extras/mcp-rtk-server/dist/index.js"],
       "env": {
         "RTK_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
+        "RTK_PROMPT_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizePrompt",
         "RTK_CLI_PATH": "/usr/local/bin/rtk"
       }
     }
@@ -404,9 +455,8 @@ R2KOptimizer
 
 ## Known Gaps
 
-- AWS Lambda currently uses a simple 4-character token heuristic. The Azure backend has the richer Tiktoken-based optimizer.
-- `R2K.CLI` expects `total_session_savings` in the response metrics, but the current AWS Lambda response does not include it. The CLI can still execute commands, but the metric summary should be made AWS-compatible in a future cleanup.
-- Cursor model prompt tokens are not automatically intercepted. Only terminal commands routed through `rtk`, aliases, or MCP are optimized.
+- Cursor prompt hooks can show/block with an optimized prompt, but they cannot silently replace the submitted prompt in place.
+- Cursor still adds hidden context such as rules, tool output, and selected files. R2K reports estimated savings for prompt text and routed commands it can observe.
 - Secrets were handled locally during setup. Rotate any credentials that were pasted into chat or terminal history.
 - There is an extra lowercase `tokenlogs` table in MySQL that is not used by the current Lambda.
 

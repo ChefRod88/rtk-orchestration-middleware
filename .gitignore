@@ -14,3 +14,6 @@ func-out/
 
 # Local Cursor MCP (copy from .cursor/mcp.json.example; avoid committing secrets)
 .cursor/mcp.json
+
+# Local R2K overrides
+.r2k/*.local.json

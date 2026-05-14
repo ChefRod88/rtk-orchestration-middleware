@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/node_modules/
+extras/mcp-rtk-server/dist/
+extras/mcp-stdio-rtk-stub/node_modules/
+func-out/
+*.log
+**/*.log
+**/local.settings.json
+.cursor/mcp.json
+.r2k/*.local.json

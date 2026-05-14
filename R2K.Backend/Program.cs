@@ -11,6 +11,7 @@ var host = new HostBuilder()
         services.AddSingleton(_ => TikTokenEncoder.CreateForModel(Models.Gpt4o));
         services.AddSingleton<ICommandOptimizer, CliCommandOptimizer>();
         services.AddSingleton<ICommandOptimizationService, CommandOptimizationService>();
+        services.AddSingleton<IPromptOptimizationService, PromptOptimizationService>();
     })
     .Build();
 
