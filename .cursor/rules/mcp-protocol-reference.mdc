@@ -1,0 +1,49 @@
+---
+description: MCP (Model Context Protocol) JSON-RPC stdio semantics for Tools servers in this repo
+globs:
+  - "**/extras/mcp*/**/*"
+alwaysApply: false
+---
+
+# MCP reference (for Composer / Agent citations)
+
+Treat the **indexed Cursor Doc "MCP"** (`modelcontextprotocol.io`) as authoritative. This rule is a **short mnemonic**—not a spec replacement.
+
+## Transport (local servers here)
+
+This repository implements **stdio** MCP servers (`extras/mcp-rtk-server/`, legacy JS stub): JSON-RPC messages delimited/framed over **stdin / stdout**. **stderr** is reserved for diagnostics; never write MCP frames to stderr.
+
+The **`@modelcontextprotocol/server`** `StdioServerTransport` abstracts the MCP lifecycle so your tool code stays at the **tools/register** semantic level.
+
+## JSON-RPC mindset
+
+MCP inherits **JSON-RPC 2.0** request/response symmetry: each request carries `jsonrpc`, `id`, `method`, optional `params`. Clients call methods such as **`tools/list`** and **`tools/call`** once capabilities are negotiated.
+
+Canonical read: **`https://modelcontextprotocol.io/specification/latest`** (see *Lifecycle*, *Tools*).
+
+### Typical handshake pattern (mental model)
+
+1. Client capability probe / session initialization per MCP lifecycle section of the indexed docs (`initialize`, `notifications/initialized`, etc.).
+2. Client lists tools: **`tools/list`** returns registered tool schemas.
+3. Client invokes **`tools/call`** with `{ "name": "run_rtk_command", "arguments": { "command": "npm install -D lodash" } }`.
+4. Server returns structured **content blocks** (`type: text`, …) per MCP tooling responses.
+
+Implementations **must keep request ordering + id correctness** intact; do not mutate framing when wrapping `spawn()`.
+
+### Tools you ship here
+
+- **`run_rtk_command`** (`extras/mcp-rtk-server/src/index.ts`): required string **`command`** → tokenizes with **`shell-quote` parse** → `spawn(RTK_CLI_PATH)` default **`/usr/local/bin/rtk`**.
+
+## Debugging checklist
+
+| Symptom | Likelihood |
+|---------|-------------|
+| Server exits immediately | Unhandled rejection before `StdioServerTransport` bind—check MCP Logs. |
+| Tool never registers | Older SDK mismatch—compare `@modelcontextprotocol/server` release notes vs Cursor version. |
+| `rtk` ENOENT | Install CLI (`scripts/install-rtk.sh`) or export **`RTK_CLI_PATH`**. |
+
+## Official links (also add to Cursor → Features → Docs)
+
+- Introduction: **`https://modelcontextprotocol.io/introduction`**
+- Specification (latest stable link target): **`https://modelcontextprotocol.io/specification/latest`**
+- Cursor integration overview: **`https://cursor.com/docs/mcp`** / **`https://cursor.com/help/customization/mcp`**

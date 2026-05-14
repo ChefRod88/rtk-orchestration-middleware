@@ -1,0 +1,59 @@
+Index official MCP docs inside Cursor (so Composer can cite conventions / JSON-RPC)
+==================================================================================
+
+A) Cursor "Docs" index (recommended for @MCP in prompts)
+------------------------------------------------------------
+These steps happen in Cursor Desktop—not in Git.
+
+  1. Open Cursor Settings:
+       macOS     → Cmd + Shift + J
+       Win/Linux → Ctrl + Shift + J
+
+  2. Go to: Features → Docs
+
+  3. Click: + Add New Doc
+
+  4. Paste URL:
+       https://modelcontextprotocol.io/introduction
+
+  5. Name the doc bucket: MCP
+
+Then in Composer / Agent prompts you may reference MCP like:
+  "Follow @MCP for JSON-RPC semantics and Tools lifecycle."
+
+Also bookmark the full specification index:
+  https://modelcontextprotocol.io/specification/latest
+
+
+B) Where Cursor reads MCP servers (stdio tools)
+------------------------------------------------------------
+Cursor merges:
+
+  ~/.cursor/mcp.json                    (personal, all workspaces)
+  <repo>/.cursor/mcp.json               (team-shareable — commit if safe)
+
+Paste entries from `.cursor/mcp.json.example` in this repository and adjust paths.
+
+Important: MCP registration is **`mcp.json`**, not `cursor-settings.json`.
+
+
+C) Composer implementation prompt (after docs are indexed)
+------------------------------------------------------------
+Paste into Composer (Cmd + I on macOS shortcut may vary):
+
+--- cut ---
+# Role: Senior AI Engineer
+
+Implement or extend MCP integration for repo `extras/mcp-rtk-server/` so Cursor can call `/usr/local/bin/rtk`.
+
+Constraints:
+  - Protocol nuances: follow @MCP (indexed documentation).
+  - Tool name: run_rtk_command
+  - Input: `{ "command": string }` executed as parsed argv segments for `rtk`.
+--- end cut ---
+
+
+D) MCP logs in Cursor
+------------------------------------------------------------
+Output panel → MCP Logs — use when diagnosing handshake / tool-call failures.
+

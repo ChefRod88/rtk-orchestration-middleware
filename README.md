@@ -23,6 +23,8 @@
 - [Database](#database)
 - [CI/CD](#cicd)
 - [Roadmap](#roadmap)
+- [Cursor MCP docs and server](#cursor-mcp-docs-and-server-registration)
+
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
@@ -93,7 +95,12 @@ git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
 | [`R2K.Backend.Tests/`](R2K.Backend.Tests/) | Unit tests (xUnit; **`net9.0`** entry assembly when the tooling host is .NET 9—library under test remains **`net8.0`**). |
 | [`R2K.CLI/`](R2K.CLI/) | .NET 8 console app; publish **linux-x64** self-contained single-file → **`rtk`**. |
 | [`scripts/install-rtk.sh`](scripts/install-rtk.sh) | Builds CLI and **`sudo install`** to **`/usr/local/bin/rtk`**. |
-| [`extras/mcp-stdio-rtk-stub/`](extras/mcp-stdio-rtk-stub/) | Optional **MCP** stdio server (`rtk_invoke` tool); requires **Node/npm** locally. |
+| [`extras/mcp-stdio-rtk-stub/`](extras/mcp-stdio-rtk-stub/) | Lightweight **JavaScript** MCP stub (`rtk_invoke` argv array); **Node/npm** required. |
+| [`extras/mcp-rtk-server/`](extras/mcp-rtk-server/) | **TypeScript / Node** MCP server (`run_rtk_command` → tokenized `spawn` → `/usr/local/bin/rtk`; SDK handles MCP JSON-RPC + lifecycle). |
+| [`extras/CURSOR_MCP_DOCS_SETUP.txt`](extras/CURSOR_MCP_DOCS_SETUP.txt) | Step-by-step: **Cursor Features → Docs** MCP URL index + Composer prompt snippets. |
+| [`.cursor/mcp.json.example`](.cursor/mcp.json.example) | Copy/adapt → **`~/.cursor/mcp.json`** or `.cursor/mcp.json` (**gitignored**) to register the server in Cursor. |
+| [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc) | Project rule cheat sheet (`@`-reference in Composer alongside indexed **MCP** doc). |
+
 | [`R2K.Backend/Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql) | **`TokenLogs`** bootstrap / **`Timestamp`** column patch. |
 
 ---
@@ -162,11 +169,23 @@ dotnet publish R2K.Backend/R2K.Backend.csproj -c Release -o ./func-out
 
 The **`func-out/`** directory is listed in **[`.gitignore`](.gitignore)** so it never appears as a tracked artifact.
 
-**MCP stub**
+### Cursor MCP docs and server registration
+
+1. **Index official MCP spec in Cursor Docs** — follow **[`extras/CURSOR_MCP_DOCS_SETUP.txt`](extras/CURSOR_MCP_DOCS_SETUP.txt)** (Settings → Features → Docs → **`https://modelcontextprotocol.io/introduction`** named **MCP**).
+2. **Build TS MCP bridge** (`run_rtk_command`):
+
+```bash
+cd extras/mcp-rtk-server && npm install && npm run build
+```
+
+3. **Tell Cursor where the server lives** — duplicate [`.cursor/mcp.json.example`](.cursor/mcp.json.example), fix the **absolute** `args[0]` path to `dist/index.js`, set **`RTK_*` env**, save as **`~/.cursor/mcp.json`** *(global)* **or** **`.cursor/mcp.json`** *(workspace)*. Real files with secrets are **gitignored**—keep the example sanitized.
+4. **Restart Cursor**. Toggle the server under **Settings → Tools & MCP** if it does not connect immediately.
+
+Minimal JS stub (**`rtk_invoke`**) remains available:
 
 ```bash
 cd extras/mcp-stdio-rtk-stub && npm install
-# Cursor MCP: command "node", args: ["<repo>/extras/mcp-stdio-rtk-stub/server.mjs"]
+# command "node", args: ["…/extras/mcp-stdio-rtk-stub/server.mjs"]
 ```
 
 ---
@@ -238,7 +257,7 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 |----|--------|---------|
 | L1 | Declarative infra | IaC (**Bicep** / Terraform) describing Function App + storage + SQL + RBAC + GitHub federated credential. |
 | L2 | Data evolution | Indexed **`Timestamp`**, partitioning strategy, archival job; optionally **Flyway**/DbUp migration runner. |
-| L3 | MCP productization | **`@scope/mcp-r2k` npm** or bundled container; pinned Cursor **`mcp.json`** recipe **+** troubleshooting runbook. |
+| L3 | MCP productization | Harden **`extras/mcp-rtk-server`** (`run_rtk_command`), publish **`@scope/mcp-r2k` npm** (optional bundled container), pin **`.cursor/mcp.json`** recipe + troubleshooting runbook. |
 | L4 | Policy & scale | Plugin-style optimization rules (**npm**/ **git**/ **pnpm** bundles), quotas / JWT / Managed Identity boundary on **`OptimizeCommand`**, org dashboards. |
 
 ---

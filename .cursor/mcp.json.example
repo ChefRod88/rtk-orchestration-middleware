@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "r2k-run-rtk-command": {
+      "command": "node",
+      "args": ["/REPLACE_WITH_REPO_ABSOLUTE_PATH/extras/mcp-rtk-server/dist/index.js"],
+      "env": {
+        "RTK_CLI_PATH": "/usr/local/bin/rtk",
+        "RTK_API_URL": "https://YOUR_FUNCTION_APP.azurewebsites.net/api/OptimizeCommand",
+        "RTK_FUNCTION_KEY": "YOUR_FUNCTION_OR_HOST_KEY"
+      }
+    }
+  }
+}

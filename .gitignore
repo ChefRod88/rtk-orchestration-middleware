@@ -2,8 +2,15 @@
 **/bin/
 **/obj/
 
+# Node (MCP servers)
+**/node_modules/
+extras/mcp-rtk-server/dist/
+
 # Azure Functions — never commit local secrets / connection strings
 **/local.settings.json
 
 # Local publish smoke output (readme sanity build)
 func-out/
+
+# Local Cursor MCP (copy from .cursor/mcp.json.example; avoid committing secrets)
+.cursor/mcp.json
