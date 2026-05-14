@@ -53,6 +53,11 @@ public sealed class HookRegistry
     public bool ShouldIntercept(string command)
         => hooks.ContainsKey(command);
 
+    public HookDefinition? GetHook(string command)
+        => hooks.TryGetValue(command, out HookDefinition? hook)
+            ? hook
+            : null;
+
     public PruningStrategy? GetPruningStrategy(string command)
         => hooks.TryGetValue(command, out HookDefinition? hook)
             ? hook.PruningStrategy

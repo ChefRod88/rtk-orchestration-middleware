@@ -21,17 +21,23 @@ if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
 
 var hookRegistry = HookRegistry.LoadFromDefaultLocations();
 
+string? shimCommand = GetShimCommandName();
+string commandName = shimCommand ?? args[0];
+string[] commandArgs = shimCommand is null ? args.Skip(1).ToArray() : args;
+HookDefinition? hook = hookRegistry.GetHook(commandName);
+if (hook is null)
+{
+    await ExecuteRealCommand(commandName, commandArgs);
+    return;
+}
+
+var contextPruning = new ContextPruningEngine(new ContextPruner())
+    .Prune(commandArgs, hook.PruningStrategy);
+
 if (string.IsNullOrWhiteSpace(apiUrl))
 {
     Console.Error.WriteLine("RTK_API_URL is not set. Run scripts/setup-r2k-codespace.sh or export RTK_API_URL.");
     Environment.ExitCode = 2;
-    return;
-}
-
-string? shimCommand = GetShimCommandName();
-if (shimCommand is not null && !hookRegistry.ShouldIntercept(shimCommand))
-{
-    await ExecuteRealCommand(shimCommand, args);
     return;
 }
 
@@ -79,7 +85,7 @@ using var process = Process.Start(psi);
 process?.WaitForExit();
 
 int? exitCode = process?.ExitCode;
-RecordLastMetrics(result["metrics"], optimized, exitCode);
+RecordLastMetrics(result["metrics"], optimized, exitCode, contextPruning);
 if (ShouldPrintSavingsToTerminal())
     PrintSavings(result["metrics"]);
 
@@ -202,7 +208,11 @@ static bool ShouldPrintSavingsToTerminal()
         || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
 }
 
-static void RecordLastMetrics(JToken? metrics, string commandExecuted, int? commandExitCode)
+static void RecordLastMetrics(
+    JToken? metrics,
+    string commandExecuted,
+    int? commandExitCode,
+    ContextPruningResult? contextPruning = null)
 {
     try
     {
@@ -230,6 +240,12 @@ static void RecordLastMetrics(JToken? metrics, string commandExecuted, int? comm
             ["tokensSaved"] = saved,
             ["savingsPercent"] = percent,
             ["sessionTotalSavedTokens"] = sessionTotal,
+            ["contextFiles"] = contextPruning?.Files,
+            ["contextTokensOriginal"] = contextPruning?.OriginalTokenCount,
+            ["contextTokensPruned"] = contextPruning?.PrunedTokenCount,
+            ["contextTokensSaved"] = contextPruning is not null
+                ? Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount)
+                : null,
         };
 
         var json = JsonSerializer.Serialize(

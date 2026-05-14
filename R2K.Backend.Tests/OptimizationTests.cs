@@ -176,3 +176,60 @@ public sealed class ContextPrunerTests
         }
     }
 }
+
+public sealed class ContextPruningEngineTests
+{
+    [Fact]
+    public void Prune_uses_agentic_strategy_to_reduce_file_context_tokens()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            public sealed class Worker
+            {
+                public void Run()
+                {
+                    var longValue = "this is intentionally verbose internal logic";
+                    Console.WriteLine(longValue);
+                    Console.WriteLine(longValue);
+                    Console.WriteLine(longValue);
+                }
+            }
+            """);
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([tempFile], PruningStrategy.Agentic);
+
+            Assert.Equal([Path.GetFullPath(tempFile)], result.Files);
+            Assert.True(result.OriginalTokenCount > result.PrunedTokenCount);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void Prune_keeps_minimal_strategy_unpruned()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(tempFile, "public sealed class Worker { }");
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([tempFile], PruningStrategy.Minimal);
+
+            Assert.Equal(result.OriginalTokenCount, result.PrunedTokenCount);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+}
