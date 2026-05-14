@@ -1,0 +1,39 @@
+---
+description: After repo edits, automatically git add + commit locally and git push to origin (ACP); shorthand a/c/p/acp defined
+alwaysApply: true
+---
+
+# Git workflow: always ACP locally and on the remote
+
+## Default behavior
+
+When substantive work completes—changes to tracked files or intentional new project files—**automatically**:
+
+1. **Add** (`git`): stage the **minimal coherent set** that reflects what you implemented. Prefer scoped paths over `git add -A` when unrelated untracked files exist unless the user clearly wants everything staged.
+2. **Commit**: use a substantive message explaining what changed and why (avoid one-word subjects). Do not leave an empty index with no staged changes.
+3. **Push**: **`git push`** to the upstream for the current branch (usually `origin/<branch>`).
+
+Run this **without** asking for shortcut-by-shortcut confirmation, unless the user explicitly opts out (“don’t commit”, “no push”, “WIP locally only”, equivalent).
+
+### When push is rejected behind remote
+
+Prefer **`git pull --rebase`** (then push) over force-push unless the user directs otherwise.
+
+If **Git LFS** hooks complain that `git-lfs` is missing, install/configure it rather than disabling hooks.
+
+## Tokens
+
+| Input | Meaning |
+|--------|----------|
+| `a` | Stage the agreed/current change set (`git add …`). |
+| `c` | Commit with full drafted subject/body. |
+| `p` | `git push`. |
+| `acp`, “commit and push”, “ship it” | Run add → commit → push in sequence. |
+
+When combining steps fits the intent, chaining is allowed (e.g. after `approve` referring to `acp`: run the staged sequence).
+
+## Skip ACP only when justified
+
+Examples: exploratory scratch not meant to persist; trivial question with no edits; genuinely nothing to stage; resolving merge/pull conflicts awaiting user judgment.
+
+Avoid staging secrets or obvious garbage; if staging scope is ambiguous, **state the exact paths** before `git add`, then execute.
