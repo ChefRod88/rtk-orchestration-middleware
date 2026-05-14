@@ -23,7 +23,11 @@ var hookRegistry = HookRegistry.LoadFromDefaultLocations();
 
 string? shimCommand = GetShimCommandName();
 string commandName = shimCommand ?? args[0];
-string[] commandArgs = shimCommand is null ? args.Skip(1).ToArray() : args;
+string[] rawCommandArgs = shimCommand is null ? args.Skip(1).ToArray() : args;
+bool dryRun = rawCommandArgs.Any(arg => string.Equals(arg, "--dry-run", StringComparison.Ordinal));
+string[] commandArgs = rawCommandArgs
+    .Where(arg => !string.Equals(arg, "--dry-run", StringComparison.Ordinal))
+    .ToArray();
 HookDefinition? hook = hookRegistry.GetHook(commandName);
 if (hook is null)
 {
@@ -33,6 +37,12 @@ if (hook is null)
 
 var contextPruning = new ContextPruningEngine(new ContextPruner())
     .Prune(commandArgs, hook.PruningStrategy);
+
+if (dryRun)
+{
+    PrintDryRunEstimate(commandName, hook.PruningStrategy, contextPruning);
+    return;
+}
 
 if (string.IsNullOrWhiteSpace(apiUrl))
 {
@@ -204,6 +214,33 @@ static bool ShouldPrintSavingsToTerminal()
     return string.Equals(v, "1", StringComparison.OrdinalIgnoreCase)
         || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase)
         || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
+}
+
+static void PrintDryRunEstimate(
+    string commandName,
+    PruningStrategy strategy,
+    ContextPruningResult contextPruning)
+{
+    int saved = Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount);
+    decimal savingsPercent = contextPruning.OriginalTokenCount > 0
+        ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
+        : 0;
+
+    Console.WriteLine();
+    Console.WriteLine("======================================");
+    Console.WriteLine("Mission 2026 Token Savings Estimate");
+    Console.WriteLine("--------------------------------------");
+    Console.WriteLine($"Command: {commandName}");
+    Console.WriteLine($"Pruning strategy: {strategy.ToString().ToLowerInvariant()}");
+    Console.WriteLine($"Context files: {contextPruning.Files.Count}");
+    Console.WriteLine($"Original context tokens: {contextPruning.OriginalTokenCount}");
+    Console.WriteLine($"Pruned context tokens: {contextPruning.PrunedTokenCount}");
+    Console.WriteLine($"Estimated tokens saved: {saved}");
+    Console.WriteLine($"Estimated savings: {savingsPercent.ToString("0.##", CultureInfo.InvariantCulture)}%");
+    Console.WriteLine();
+    Console.WriteLine("Dry run only: skipped AWS Lambda request and command execution.");
+    Console.WriteLine("======================================");
+    Console.WriteLine();
 }
 
 static void RecordLastMetrics(
