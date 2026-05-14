@@ -1,0 +1,21 @@
+{
+  "name": "C# / .NET",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.vscode-dotnet-runtime"
+      ],
+      "settings": {}
+    }
+  },
+  "forwardPorts": [5000, 5001, 8080],
+  "portsAttributes": {
+    "5000": { "label": "HTTP" },
+    "5001": { "label": "HTTPS" },
+    "8080": { "label": "HTTP (alt)" }
+  },
+  "postCreateCommand": "dotnet --info",
+  "remoteUser": "vscode"
+}
