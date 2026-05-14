@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Newtonsoft.Json.Linq;
+using R2K.CLI;
 
 // Override with env RTK_API_URL; Function auth: set RTK_FUNCTION_KEY (x-functions-key).
 var apiUrl = Environment.GetEnvironmentVariable("RTK_API_URL")
@@ -18,6 +19,8 @@ if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
     return;
 }
 
+var hookRegistry = HookRegistry.LoadFromDefaultLocations();
+
 if (string.IsNullOrWhiteSpace(apiUrl))
 {
     Console.Error.WriteLine("RTK_API_URL is not set. Run scripts/setup-r2k-codespace.sh or export RTK_API_URL.");
@@ -26,7 +29,7 @@ if (string.IsNullOrWhiteSpace(apiUrl))
 }
 
 string? shimCommand = GetShimCommandName();
-if (shimCommand is not null && !IsInterceptorEnabled(shimCommand))
+if (shimCommand is not null && !hookRegistry.ShouldIntercept(shimCommand))
 {
     await ExecuteRealCommand(shimCommand, args);
     return;
@@ -144,61 +147,6 @@ static string? GetShimCommandName()
     }
 
     return invokedAs;
-}
-
-static bool IsInterceptorEnabled(string command)
-{
-    string? configPath = FindHooksConfig();
-    if (configPath is null)
-        return true;
-
-    try
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(configPath));
-        if (!document.RootElement.TryGetProperty("interceptors", out var interceptors)
-            || interceptors.ValueKind != JsonValueKind.Array)
-        {
-            return true;
-        }
-
-        foreach (var interceptor in interceptors.EnumerateArray())
-        {
-            if (!interceptor.TryGetProperty("command", out var commandElement)
-                || !string.Equals(commandElement.GetString(), command, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            return !interceptor.TryGetProperty("enabled", out var enabledElement)
-                || enabledElement.ValueKind != JsonValueKind.False;
-        }
-    }
-    catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-    {
-        Console.Error.WriteLine($"RTK warning: could not read hooks config: {ex.Message}");
-    }
-
-    return true;
-}
-
-static string? FindHooksConfig()
-{
-    string? current = Directory.GetCurrentDirectory();
-    while (!string.IsNullOrWhiteSpace(current))
-    {
-        string candidate = Path.Combine(current, ".r2k", "hooks.json");
-        if (File.Exists(candidate))
-            return candidate;
-
-        current = Directory.GetParent(current)?.FullName;
-    }
-
-    string userConfig = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".config",
-        "r2k",
-        "hooks.json");
-    return File.Exists(userConfig) ? userConfig : null;
 }
 
 static async Task ExecuteRealCommand(string command, string[] args)

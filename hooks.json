@@ -1,0 +1,14 @@
+[
+  {
+    "command": "npm",
+    "pruningStrategy": "minimal"
+  },
+  {
+    "command": "git",
+    "pruningStrategy": "minimal"
+  },
+  {
+    "command": "cursor",
+    "pruningStrategy": "agentic"
+  }
+]
