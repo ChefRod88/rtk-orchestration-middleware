@@ -225,6 +225,8 @@ Push **`main`** runs [`.github/workflows/main_rtk-ochestration-middleware.yml`](
 
 Status-style rows first, then forward-looking backlog. Order is directional, not contractual.
 
+**Blueprint note:** The Mission 2026 deployment guide targets **`SessionId`** on **`TokenLogs`**, a fuller **CLI telemetry report**, and optional **`cursor`** shell interception. Those items are **not** fully reflected in runtime output/schema yet—see **Now → N4–N6**.
+
 ### Shipped (baseline)
 
 | ID | Capability |
@@ -243,16 +245,20 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 |----|--------|---------|
 | N1 | Azure alignment | Provision / verify **Function App** (correct plan + **`AzureWebJobsStorage`**); confirm workflow **`app-name`** + RBAC/OIDC deploy succeeds end-to-end. |
 | N2 | Secrets ergonomics | Key Vault references or documented rotation for **`SqlConnectionString`** + function keys; align portal settings with **`local.settings.json`** template snippet in wiki/issue. |
-| N3 | Cursor + MCP smoke | Index **MCP** docs in Cursor (**Features → Docs**); register server from **`.cursor/mcp.json.example`**; verify **`run_rtk_command`** round-trip against live **`rtk`**. |
+| N3 | Cursor + MCP smoke | Index **MCP** docs (**Features → Docs**); register **`mcp.json`** from **`.cursor/mcp.json.example`**; verify **`run_rtk_command`** end-to-end against **`rtk`**. |
+| N4 | **`TokenLogs` parity** | Add **`SessionId`** (GUID or string) column end-to-end: [`Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql), Dapper insert, optional propagation from CLI **`X-RTK-Session`** header. |
+| N5 | **CLI telemetry parity** | Implement **RTK TELEMETRY REPORT**–style block (**original / optimized / saved this run / session total**); derive **tokens saved** client-side; refuse startup with clear error when **`RTK_API_URL`** is empty. |
+| N6 | **Shell hooks parity** | Document optional **`alias cursor='rtk cursor'`** (and trade-offs) next to **`npm`/`git`/`npx`**; Codespace **dotfiles** recipe for durable hooks. |
 
 ### Next (engineering hardening)
 
 | ID | Focus | Outcome |
 |----|--------|---------|
-| X1 | CLI resilience | Validate **`RTK_API_URL`** nonempty with actionable stderr; graceful HTTP failure messages (status + body excerpt). |
+| X1 | CLI HTTP resilience | Catch non-2xx without raw exception: print **status + problem body** before exit (complements **N5** empty-URL guard). |
 | X2 | CI quality gate | **`dotnet test`** on **`R2K.Backend.Tests`** in Actions; optional **`dotnet format`** / analyzers gates. |
-| X3 | Observability | Application Insights wired to Worker + dependency tracking on SQL failures; **`X-Correlation-Id`** from CLI→Function for log join. |
+| X3 | Observability | Application Insights wired to Worker + dependency tracking on SQL failures; **`X-Correlation-Id`** from CLI→Function for log join (pairs with **N4** **`SessionId`**). |
 | X4 | MCP CI / packaging | **`npm ci && npm run build`** for **`extras/mcp-rtk-server`** on **`ubuntu-latest` + Node 20**; cache artifacts; optional pre-release npm tarball. |
+| X5 | Dev Container + Node | Optional **`devcontainer.json` feature** (`ghcr.io/devcontainers/features/node`) so **MCP** **`npm install`** / **`npm run build`** work OOTB in Codespaces. |
 
 ### Later (platform & product)
 
