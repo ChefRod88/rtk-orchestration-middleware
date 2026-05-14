@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Intercept · Optimize · Execute · Measure</strong><br/>
-  <sub>Token-aware CLI routing for agents and developers, backed by .NET&nbsp;8 Azure Functions and Azure SQL telemetry.</sub>
+  <sub>Token-aware CLI routing for agents and developers, backed by .NET&nbsp;8 Azure Functions / AWS Lambda and MySQL telemetry.</sub>
 </p>
 
 <p align="center">
@@ -15,6 +15,7 @@
 <summary><strong>On this page</strong></summary>
 
 - [What this is](#what-this-is)
+- [Current AWS/Codespaces usage guide](#current-awscodespaces-usage-guide)
 - [Critical: Function App, not Web App](#critical-use-an-azure-function-app-not-a-web-app)
 - [Repository layout](#repository-layout)
 - [Prerequisites](#prerequisites)
@@ -56,6 +57,14 @@ flowchart LR
   RTK -->|bash_minus_c| Exec[Local_execution]
   Fn -->|JSON| RTK
 ```
+
+---
+
+## Current AWS/Codespaces usage guide
+
+The live AWS path now uses **API Gateway to Lambda (`R2KOptimizer`) to RDS MySQL (`r2k_telemetry.TokenLogs`)**. For the current end-to-end setup, deployment notes, Cursor Agent shell aliases, MCP option, and test checklist, see [`docs/USAGE.md`](docs/USAGE.md).
+
+Important scope note: R2K optimizes shell commands routed through `rtk`, aliases, or MCP. It does **not** automatically rewrite Cursor's natural-language model prompts.
 
 ---
 
