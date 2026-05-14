@@ -12,6 +12,7 @@ public sealed class ContextPruningEngine(ContextPruner contextPruner)
 
         return new ContextPruningResult(
             files,
+            prunedContext,
             EstimateTokens(originalContext),
             EstimateTokens(prunedContext));
     }
@@ -38,5 +39,6 @@ public sealed class ContextPruningEngine(ContextPruner contextPruner)
 
 public sealed record ContextPruningResult(
     IReadOnlyList<string> Files,
+    string PrunedContext,
     int OriginalTokenCount,
     int PrunedTokenCount);

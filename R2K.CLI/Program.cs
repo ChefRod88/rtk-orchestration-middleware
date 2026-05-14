@@ -45,13 +45,20 @@ string fullCommand = string.Join(" ", shimCommand is null ? args : new[] { shimC
 
 using var client = new HttpClient();
 var functionKey = Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY");
-if (!string.IsNullOrWhiteSpace(functionKey))
-    client.DefaultRequestHeaders.Add("x-functions-key", functionKey.Trim());
 
-HttpResponseMessage response;
+JObject result;
 try
 {
-    response = await client.PostAsJsonAsync(apiUrl, new { command = fullCommand });
+    result = await new AwsLambdaClient(client)
+        .OptimizeAsync(apiUrl, fullCommand, contextPruning, functionKey);
+}
+catch (AwsLambdaRequestException ex)
+{
+    Console.Error.WriteLine($"RTK optimizer failed: {(int)ex.StatusCode} {ex.ReasonPhrase}");
+    if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        Console.Error.WriteLine(ex.ResponseBody);
+    Environment.ExitCode = (int)ex.StatusCode;
+    return;
 }
 catch (HttpRequestException ex)
 {
@@ -59,17 +66,8 @@ catch (HttpRequestException ex)
     Environment.ExitCode = 2;
     return;
 }
-if (!response.IsSuccessStatusCode)
-{
-    var problem = await response.Content.ReadAsStringAsync();
-    Console.Error.WriteLine($"RTK optimizer failed: {(int)response.StatusCode} {response.ReasonPhrase}");
-    if (!string.IsNullOrWhiteSpace(problem))
-        Console.Error.WriteLine(problem);
-    Environment.ExitCode = (int)response.StatusCode;
-    return;
-}
 
-var result = JObject.Parse(await response.Content.ReadAsStringAsync());
+AwsLambdaClient.PrintOptimizedOutput(result, contextPruning);
 
 string optimized = result["command_executed"]!.ToString();
 

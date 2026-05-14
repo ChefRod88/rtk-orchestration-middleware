@@ -206,6 +206,8 @@ public sealed class ContextPruningEngineTests
 
             Assert.Equal([Path.GetFullPath(tempFile)], result.Files);
             Assert.True(result.OriginalTokenCount > result.PrunedTokenCount);
+            Assert.Contains("// ... [logic removed] ...", result.PrunedContext);
+            Assert.DoesNotContain("intentionally verbose internal logic", result.PrunedContext);
         }
         finally
         {
@@ -231,5 +233,25 @@ public sealed class ContextPruningEngineTests
         {
             File.Delete(tempFile);
         }
+    }
+}
+
+public sealed class AwsLambdaClientTests
+{
+    [Fact]
+    public void CreatePayload_includes_command_pruned_context_and_token_counts()
+    {
+        var context = new ContextPruningResult(
+            ["/tmp/demo.cs"],
+            "public sealed class Demo { }",
+            OriginalTokenCount: 100,
+            PrunedTokenCount: 20);
+
+        AwsLambdaPayload payload = AwsLambdaClient.CreatePayload("cursor /tmp/demo.cs", context);
+
+        Assert.Equal("cursor /tmp/demo.cs", payload.Command);
+        Assert.Equal("public sealed class Demo { }", payload.PrunedContext);
+        Assert.Equal(100, payload.OriginalTokenCount);
+        Assert.Equal(20, payload.PrunedTokenCount);
     }
 }
