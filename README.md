@@ -232,9 +232,10 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | S1 | .NET **8** isolated **`R2K.Backend`** with HTTP **`OptimizeCommand`**, Tiktoken counts, heuristic CLI rewrite, snake_case JSON for **`R2K.CLI`** compatibility. |
 | S2 | **Dapper** + **`Microsoft.Data.SqlClient`** telemetry to **`TokenLogs`** ( **`Timestamp`** ), aggregate session savings **`SUM`**. |
 | S3 | **`rtk`** single-file CLI, **`scripts/install-rtk.sh`**, **`RTK_*`** env overrides, optional bash aliases documented. |
-| S4 | **GitHub Actions** fixed for **Functions** (**`dotnet publish`** + **`Azure/functions-action`**), not generic Web Apps + .NET **10**. |
-| S5 | **xUnit** coverage for tokenizer + optimizer; **`local.settings.json` / `func-out`** git hygiene. |
-| S6 | **MCP** reference implementation under **`extras/mcp-stdio-rtk-stub`** (manual **`npm install`**). |
+| S4 | **GitHub Actions** fixed for **Functions** (**`dotnet publish`** + **`Azure/functions-action`**), not generic Web Apps + wrong SDK line. Workflow status badge on README. |
+| S5 | **xUnit** coverage for tokenizer + optimizer; **`local.settings.json` / `func-out` / `node_modules` / MCP `dist/`** git hygiene. |
+| S6 | **MCP Cursor integration assets**: **`extras/CURSOR_MCP_DOCS_SETUP.txt`**, rule [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc), example [`.cursor/mcp.json.example`](.cursor/mcp.json.example) (real **`mcp.json` gitignored**). |
+| S7 | **MCP servers**: JS stub **`rtk_invoke`** ([`extras/mcp-stdio-rtk-stub`](extras/mcp-stdio-rtk-stub)); TypeScript **`run_rtk_command`** ([`extras/mcp-rtk-server`](extras/mcp-rtk-server)) using **`@modelcontextprotocol/server`** stdio + **`shell-quote`** argv tokenization. |
 
 ### Now (next 1–2 iterations)
 
@@ -242,14 +243,16 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 |----|--------|---------|
 | N1 | Azure alignment | Provision / verify **Function App** (correct plan + **`AzureWebJobsStorage`**); confirm workflow **`app-name`** + RBAC/OIDC deploy succeeds end-to-end. |
 | N2 | Secrets ergonomics | Key Vault references or documented rotation for **`SqlConnectionString`** + function keys; align portal settings with **`local.settings.json`** template snippet in wiki/issue. |
+| N3 | Cursor + MCP smoke | Index **MCP** docs in Cursor (**Features → Docs**); register server from **`.cursor/mcp.json.example`**; verify **`run_rtk_command`** round-trip against live **`rtk`**. |
 
 ### Next (engineering hardening)
 
 | ID | Focus | Outcome |
 |----|--------|---------|
 | X1 | CLI resilience | Validate **`RTK_API_URL`** nonempty with actionable stderr; graceful HTTP failure messages (status + body excerpt). |
-| X2 | CI quality gate | **`dotnet test`** step on **`R2K.Backend.Tests`** in Actions; optional **`dotnet format`** / analyzers gates. |
+| X2 | CI quality gate | **`dotnet test`** on **`R2K.Backend.Tests`** in Actions; optional **`dotnet format`** / analyzers gates. |
 | X3 | Observability | Application Insights wired to Worker + dependency tracking on SQL failures; **`X-Correlation-Id`** from CLI→Function for log join. |
+| X4 | MCP CI / packaging | **`npm ci && npm run build`** for **`extras/mcp-rtk-server`** on **`ubuntu-latest` + Node 20**; cache artifacts; optional pre-release npm tarball. |
 
 ### Later (platform & product)
 
@@ -257,8 +260,8 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 |----|--------|---------|
 | L1 | Declarative infra | IaC (**Bicep** / Terraform) describing Function App + storage + SQL + RBAC + GitHub federated credential. |
 | L2 | Data evolution | Indexed **`Timestamp`**, partitioning strategy, archival job; optionally **Flyway**/DbUp migration runner. |
-| L3 | MCP productization | Harden **`extras/mcp-rtk-server`** (`run_rtk_command`), publish **`@scope/mcp-r2k` npm** (optional bundled container), pin **`.cursor/mcp.json`** recipe + troubleshooting runbook. |
-| L4 | Policy & scale | Plugin-style optimization rules (**npm**/ **git**/ **pnpm** bundles), quotas / JWT / Managed Identity boundary on **`OptimizeCommand`**, org dashboards. |
+| L3 | MCP productization | Published **`@scope/mcp-r2k`** (or Cursor Marketplace listing), semantic versioning, signed containers, security review of **`shell-quote` → spawn** path; multi-tool surface (e.g. dry-run optimize without execute). |
+| L4 | Policy & scale | Plugin-style optimization rules (**npm** / **git** / **pnpm** bundles), quotas / JWT / Managed Identity boundary on **`OptimizeCommand`**, org dashboards. |
 
 ---
 
