@@ -3,9 +3,10 @@
 
 CREATE TABLE IF NOT EXISTS TokenLogs (
     Id INT AUTO_INCREMENT PRIMARY KEY,
+    Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     Command TEXT NOT NULL,
     OriginalTokens INT NOT NULL,
     OptimizedTokens INT NOT NULL,
-    SavingsPercent DECIMAL(18, 2) NOT NULL,
-    Timestamp DATETIME(3) NOT NULL
+    SavingsPercent DECIMAL(5, 2) NOT NULL,
+    SessionId CHAR(36) DEFAULT (UUID())
 );

@@ -1,10 +1,11 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using MySqlConnector;
 
 internal static class Program
 {
-    private static void Main()
+    private static int Main()
     {
         var host = Environment.GetEnvironmentVariable("MYSQL_HOST")
             ?? "database-rtk.cxkyikqe45yz.us-east-2.rds.amazonaws.com";
@@ -13,11 +14,11 @@ internal static class Program
             ? cs
             : 15u;
 
-        // Retrieve Secrets Manager password to ENV: DB_PASSWORD
-        var password = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "";
+        // Prefer env DB_PASSWORD; fall back to the gitignored backend local.settings.json for local probes.
+        var (password, passwordSource) = GetDatabasePassword();
         var sslCa = Path.Combine(AppContext.BaseDirectory, "global-bundle.pem");
 
-        PrintPreflight(host, port, sslCa, connectSeconds, string.IsNullOrEmpty(password));
+        PrintPreflight(host, port, sslCa, connectSeconds, string.IsNullOrEmpty(password), passwordSource);
 
         var csb = new MySqlConnectionStringBuilder
         {
@@ -38,6 +39,7 @@ internal static class Program
             conn.Open();
             using var cmd = new MySqlCommand("SELECT VERSION();", conn);
             Console.WriteLine(cmd.ExecuteScalar());
+            return 0;
         }
         catch (MySqlException ex) when (ex.Message.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase)
                                        || ex.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase))
@@ -46,12 +48,12 @@ internal static class Program
             Console.Error.WriteLine("TCP connection to MySQL did not complete before the timeout.");
             Console.Error.WriteLine("This usually means the client cannot reach RDS on the network (not a wrong password).");
             PrintNetworkHints(host, port);
-            throw;
+            return 2;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Database error: {ex.Message}");
-            throw;
+            return 1;
         }
         finally
         {
@@ -60,9 +62,56 @@ internal static class Program
         }
     }
 
-    private static void PrintPreflight(string host, int port, string sslCa, uint connectSeconds, bool passwordMissing)
+    private static (string Password, string Source) GetDatabasePassword()
+    {
+        var envPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
+        if (!string.IsNullOrEmpty(envPassword))
+            return (envPassword, "DB_PASSWORD environment variable");
+
+        var localSettingsPath = FindBackendLocalSettings();
+        if (localSettingsPath is null)
+            return ("", "not configured");
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(localSettingsPath));
+            if (doc.RootElement.TryGetProperty("Values", out var values)
+                && values.TryGetProperty("DB_PASSWORD", out var password)
+                && !string.IsNullOrEmpty(password.GetString()))
+            {
+                return (password.GetString()!, "R2K.Backend/local.settings.json");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: could not read DB_PASSWORD from {localSettingsPath}: {ex.Message}");
+        }
+
+        return ("", "not configured");
+    }
+
+    private static string? FindBackendLocalSettings()
+    {
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var dir = new DirectoryInfo(start);
+            while (dir is not null)
+            {
+                var candidate = Path.Combine(dir.FullName, "R2K.Backend", "local.settings.json");
+                if (File.Exists(candidate))
+                    return candidate;
+
+                dir = dir.Parent;
+            }
+        }
+
+        return null;
+    }
+
+    private static void PrintPreflight(string host, int port, string sslCa, uint connectSeconds, bool passwordMissing, string passwordSource)
     {
         Console.WriteLine($"Target: {host}:{port} (ConnectionTimeout={connectSeconds}s)");
+        Console.WriteLine($"Password source: {passwordSource}");
         if (passwordMissing)
             Console.WriteLine("Warning: DB_PASSWORD is empty; auth will fail after the network path works.");
 
