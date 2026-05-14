@@ -1,14 +1,21 @@
-[
-  {
-    "command": "npm",
-    "pruningStrategy": "minimal"
+{
+  "version": "1.0.0",
+  "settings": {
+    "telemetry_endpoint": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",
+    "default_mode": "prune"
   },
-  {
-    "command": "git",
-    "pruningStrategy": "minimal"
-  },
-  {
-    "command": "cursor",
-    "pruningStrategy": "agentic"
-  }
-]
+  "hooks": [
+    {
+      "command": "npm",
+      "strategy": "minimal"
+    },
+    {
+      "command": "git",
+      "strategy": "diff-only"
+    },
+    {
+      "command": "cursor",
+      "strategy": "agentic"
+    }
+  ]
+}

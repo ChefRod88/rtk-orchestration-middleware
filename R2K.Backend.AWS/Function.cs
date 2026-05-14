@@ -44,15 +44,15 @@ public class Function
         if (string.IsNullOrEmpty(rawCommand))
             return JsonResponse(400, new { error = "command is required" });
 
-        string refinedContext = ContextRefiner.Refine(data.Value<string>("pruned_context") ?? "");
-        var pruningTelemetry = PruningTelemetry.FromRequest(data, refinedContext);
+        var orchestratorRequest = OrchestratorRequest.From(data, rawCommand);
+        var plan = OrchestratorPipeline.Plan(orchestratorRequest);
         string optimizedCommand = CliCommandOptimizer.Optimize(rawCommand);
         var metrics = CalculateMetrics(rawCommand, optimizedCommand);
         int totalSessionSavings = await PersistTelemetry(
             "command",
             rawCommand,
             metrics,
-            pruningTelemetry,
+            plan.Telemetry,
             context);
 
         return JsonResponse(200, new
@@ -65,10 +65,12 @@ public class Function
                 tokens_saved = metrics.TokensSaved,
                 savings_percentage = metrics.SavingsPercent,
                 total_session_savings = totalSessionSavings,
-                strategy_used = pruningTelemetry.StrategyUsed,
-                original_context_tokens = pruningTelemetry.OriginalContextTokens,
-                pruned_context_tokens = pruningTelemetry.PrunedContextTokens,
-                pruning_efficiency = pruningTelemetry.PruningEfficiency
+                strategy_used = plan.Telemetry.StrategyUsed,
+                original_context_tokens = plan.Telemetry.OriginalContextTokens,
+                pruned_context_tokens = plan.Telemetry.PrunedContextTokens,
+                pruning_efficiency = plan.Telemetry.PruningEfficiency,
+                orchestration_decision = plan.Decision,
+                context_density = plan.ContextDensity
             }
         });
     }
@@ -246,6 +248,60 @@ internal sealed record PruningTelemetry(
 
     private static int EstimateTokens(string value)
         => (int)Math.Ceiling(value.Length / 4m);
+}
+
+internal sealed record OrchestratorRequest(
+    string Command,
+    string PrunedContext,
+    string? StrategyUsed,
+    int? OriginalTokenCount,
+    int? PrunedTokenCount)
+{
+    internal static OrchestratorRequest From(JObject data, string command)
+        => new(
+            command,
+            data.Value<string>("pruned_context") ?? "",
+            data.Value<string>("strategy")
+                ?? data.Value<string>("strategy_used")
+                ?? data.Value<string>("pruning_strategy"),
+            data.Value<int?>("original_token_count")
+                ?? data.Value<int?>("original_context_tokens"),
+            data.Value<int?>("pruned_token_count")
+                ?? data.Value<int?>("pruned_context_tokens"));
+}
+
+internal sealed record OrchestratorPlan(
+    string Decision,
+    decimal? ContextDensity,
+    string RefinedContext,
+    PruningTelemetry Telemetry);
+
+internal static class OrchestratorPipeline
+{
+    internal static OrchestratorPlan Plan(OrchestratorRequest request)
+    {
+        string refinedContext = ContextRefiner.Refine(request.PrunedContext);
+        var telemetry = PruningTelemetry.FromRequest(
+            new JObject
+            {
+                ["pruning_strategy"] = request.StrategyUsed,
+                ["original_token_count"] = request.OriginalTokenCount,
+                ["pruned_token_count"] = request.PrunedTokenCount,
+            },
+            refinedContext);
+        decimal? density = telemetry.OriginalContextTokens is > 0 && telemetry.PrunedContextTokens.HasValue
+            ? Math.Round((decimal)telemetry.PrunedContextTokens.Value / telemetry.OriginalContextTokens.Value, 4)
+            : null;
+        string decision = density switch
+        {
+            null => "no_context",
+            <= 0.35m => "accept",
+            <= 0.75m => "refine",
+            _ => "dense_context",
+        };
+
+        return new OrchestratorPlan(decision, density, refinedContext, telemetry);
+    }
 }
 
 internal static class ContextRefiner

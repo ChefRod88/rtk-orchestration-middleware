@@ -6,6 +6,7 @@ namespace R2K.CLI;
 public enum PruningStrategy
 {
     Minimal,
+    DiffOnly,
     Agentic,
 }
 
@@ -19,8 +20,13 @@ public sealed class HookRegistry
 
     private readonly Dictionary<string, HookDefinition> hooks;
 
-    private HookRegistry(IEnumerable<HookDefinition> hookDefinitions)
+    private HookRegistry(
+        IEnumerable<HookDefinition> hookDefinitions,
+        HookRegistrySettings? settings = null,
+        string? version = null)
     {
+        Settings = settings ?? new HookRegistrySettings(null, null);
+        Version = version;
         hooks = hookDefinitions
             .Where(hook => !string.IsNullOrWhiteSpace(hook.Command))
             .ToDictionary(
@@ -28,6 +34,9 @@ public sealed class HookRegistry
                 hook => hook,
                 StringComparer.OrdinalIgnoreCase);
     }
+
+    public HookRegistrySettings Settings { get; }
+    public string? Version { get; }
 
     public static HookRegistry LoadFromDefaultLocations()
         => Load(FindHooksConfig());
@@ -40,8 +49,18 @@ public sealed class HookRegistry
         try
         {
             string json = File.ReadAllText(path);
-            var hooks = JsonSerializer.Deserialize<List<HookDefinition>>(json, JsonOptions) ?? [];
-            return new HookRegistry(hooks);
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var hooks = JsonSerializer.Deserialize<List<LegacyHookDefinition>>(json, JsonOptions) ?? [];
+                return new HookRegistry(hooks.Select(hook => hook.ToHookDefinition()));
+            }
+
+            var registry = JsonSerializer.Deserialize<HookRegistryDocument>(json, JsonOptions);
+            return new HookRegistry(
+                registry?.GetHooks().Select(hook => hook.ToHookDefinition()) ?? [],
+                registry?.Settings,
+                registry?.Version);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -82,3 +101,45 @@ public sealed class HookRegistry
 public sealed record HookDefinition(
     [property: JsonPropertyName("command")] string Command,
     [property: JsonPropertyName("pruningStrategy")] PruningStrategy PruningStrategy);
+
+public sealed record HookRegistrySettings(
+    [property: JsonPropertyName("telemetry_endpoint")] string? TelemetryEndpoint,
+    [property: JsonPropertyName("default_mode")] string? DefaultMode);
+
+internal sealed record HookRegistryDocument(
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("settings")] HookRegistrySettings? Settings,
+    [property: JsonPropertyName("hooks")] IReadOnlyList<ConfiguredHookDefinition>? Hooks)
+{
+    public IReadOnlyList<ConfiguredHookDefinition> GetHooks()
+        => Hooks ?? [];
+}
+
+internal sealed record ConfiguredHookDefinition(
+    [property: JsonPropertyName("command")] string Command,
+    [property: JsonPropertyName("strategy")] string? Strategy,
+    [property: JsonPropertyName("pruningStrategy")] string? PruningStrategy)
+{
+    public HookDefinition ToHookDefinition()
+        => new(Command, ParseStrategy(Strategy ?? PruningStrategy));
+
+    private static PruningStrategy ParseStrategy(string? strategy)
+        => Normalize(strategy) switch
+        {
+            "agentic" => R2K.CLI.PruningStrategy.Agentic,
+            "diffonly" => R2K.CLI.PruningStrategy.DiffOnly,
+            "minimal" or "" => R2K.CLI.PruningStrategy.Minimal,
+            _ => R2K.CLI.PruningStrategy.Minimal,
+        };
+
+    private static string Normalize(string? value)
+        => (value ?? "").Replace("-", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
+}
+
+internal sealed record LegacyHookDefinition(
+    [property: JsonPropertyName("command")] string Command,
+    [property: JsonPropertyName("pruningStrategy")] PruningStrategy PruningStrategy)
+{
+    public HookDefinition ToHookDefinition()
+        => new(Command, PruningStrategy);
+}

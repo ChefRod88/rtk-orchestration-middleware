@@ -203,6 +203,44 @@ public sealed class ContextPrunerTests
     }
 }
 
+public sealed class HookRegistryTests
+{
+    [Fact]
+    public void Load_supports_versioned_hooks_document_with_settings_and_strategy_aliases()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.json");
+        File.WriteAllText(
+            tempFile,
+            """
+            {
+              "version": "1.0.0",
+              "settings": {
+                "telemetry_endpoint": "https://example.test/OptimizeCommand",
+                "default_mode": "prune"
+              },
+              "hooks": [
+                { "command": "git", "strategy": "diff-only" },
+                { "command": "cursor", "strategy": "agentic" }
+              ]
+            }
+            """);
+
+        try
+        {
+            HookRegistry registry = HookRegistry.Load(tempFile);
+
+            Assert.Equal("https://example.test/OptimizeCommand", registry.Settings.TelemetryEndpoint);
+            Assert.Equal("prune", registry.Settings.DefaultMode);
+            Assert.Equal(PruningStrategy.DiffOnly, registry.GetPruningStrategy("git"));
+            Assert.Equal(PruningStrategy.Agentic, registry.GetPruningStrategy("cursor"));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+}
+
 public sealed class ContextPruningEngineTests
 {
     [Fact]
@@ -315,5 +353,22 @@ public sealed class AwsLambdaClientTests
         Assert.Equal(100, payload.OriginalTokenCount);
         Assert.Equal(20, payload.PrunedTokenCount);
         Assert.Equal("agentic", payload.PruningStrategy);
+    }
+}
+
+public sealed class SensitiveDataRedactorTests
+{
+    [Fact]
+    public void Redact_masks_common_secret_and_phi_patterns()
+    {
+        string raw = "Password=hunter2; api_key='abc123' Authorization: Bearer token-value SSN 123-45-6789";
+
+        string redacted = SensitiveDataRedactor.Redact(raw);
+
+        Assert.DoesNotContain("hunter2", redacted);
+        Assert.DoesNotContain("abc123", redacted);
+        Assert.DoesNotContain("token-value", redacted);
+        Assert.DoesNotContain("123-45-6789", redacted);
+        Assert.Contains("[REDACTED]", redacted);
     }
 }

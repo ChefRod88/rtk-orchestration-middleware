@@ -5,8 +5,9 @@ using MySqlConnector;
 
 internal static class Program
 {
-    private static int Main()
+    private static int Main(string[] args)
     {
+        bool migrate = args.Any(arg => string.Equals(arg, "--migrate", StringComparison.OrdinalIgnoreCase));
         var host = Environment.GetEnvironmentVariable("MYSQL_HOST")
             ?? "database-rtk.cxkyikqe45yz.us-east-2.rds.amazonaws.com";
         var port = int.TryParse(Environment.GetEnvironmentVariable("MYSQL_PORT"), out var p) ? p : 3306;
@@ -24,7 +25,7 @@ internal static class Program
         {
             Server = host,
             Port = (uint)port,
-            Database = "mysql",
+            Database = Environment.GetEnvironmentVariable("MYSQL_DATABASE") ?? (migrate ? "r2k_telemetry" : "mysql"),
             UserID = "MasterRtk",
             Password = password,
             SslMode = MySqlSslMode.Required,
@@ -37,8 +38,16 @@ internal static class Program
         {
             conn = new MySqlConnection(csb.ConnectionString);
             conn.Open();
-            using var cmd = new MySqlCommand("SELECT VERSION();", conn);
-            Console.WriteLine(cmd.ExecuteScalar());
+            if (migrate)
+            {
+                ApplyAnalyticsMigration(conn);
+                Console.WriteLine("TokenLogs analytics migration applied.");
+            }
+            else
+            {
+                using var cmd = new MySqlCommand("SELECT VERSION();", conn);
+                Console.WriteLine(cmd.ExecuteScalar());
+            }
             return 0;
         }
         catch (MySqlException ex) when (ex.Message.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase)
@@ -160,5 +169,35 @@ internal static class Program
         Console.Error.WriteLine($"  4. Same-VPC workloads: use private endpoint; SG must allow the caller’s ENI security group.");
         Console.Error.WriteLine($"  5. Optional tunnel: ssh -N -L 3307:{host}:{port} ec2-user@<bastion> then MYSQL_HOST=127.0.0.1 MYSQL_PORT=3307");
         Console.Error.WriteLine();
+    }
+
+    private static void ApplyAnalyticsMigration(MySqlConnection conn)
+    {
+        using var cmd = new MySqlCommand(
+            """
+            CREATE TABLE IF NOT EXISTS TokenLogs (
+                Id INT AUTO_INCREMENT PRIMARY KEY,
+                Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                Kind VARCHAR(20) NOT NULL DEFAULT 'command',
+                Command TEXT NOT NULL,
+                OriginalTokens INT NOT NULL,
+                OptimizedTokens INT NOT NULL,
+                SavingsPercent DECIMAL(5, 2) NOT NULL,
+                StrategyUsed VARCHAR(32) NULL,
+                OriginalContextTokens INT NULL,
+                PrunedContextTokens INT NULL,
+                PruningEfficiency DECIMAL(5, 2) NULL,
+                SessionId CHAR(36) DEFAULT (UUID())
+            );
+
+            ALTER TABLE TokenLogs
+                ADD COLUMN IF NOT EXISTS Kind VARCHAR(20) NOT NULL DEFAULT 'command' AFTER Timestamp,
+                ADD COLUMN IF NOT EXISTS StrategyUsed VARCHAR(32) NULL AFTER SavingsPercent,
+                ADD COLUMN IF NOT EXISTS OriginalContextTokens INT NULL AFTER StrategyUsed,
+                ADD COLUMN IF NOT EXISTS PrunedContextTokens INT NULL AFTER OriginalContextTokens,
+                ADD COLUMN IF NOT EXISTS PruningEfficiency DECIMAL(5, 2) NULL AFTER PrunedContextTokens;
+            """,
+            conn);
+        cmd.ExecuteNonQuery();
     }
 }

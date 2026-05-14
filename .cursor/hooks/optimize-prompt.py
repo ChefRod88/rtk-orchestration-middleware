@@ -49,7 +49,7 @@ def main():
     rtk_path = os.environ.get("RTK_CLI_PATH", "/usr/local/bin/rtk")
     try:
         result = subprocess.run(
-            [rtk_path, "--optimize-prompt"],
+            [rtk_path, "--orchestrate-prompt"],
             input=prompt,
             text=True,
             capture_output=True,

@@ -27,7 +27,8 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     config = json.load(handle)
 
-for interceptor in config:
+hooks = config.get("hooks", config) if isinstance(config, dict) else config
+for interceptor in hooks:
     command = interceptor.get("command")
     if command:
         print(command)

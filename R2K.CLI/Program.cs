@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using R2K.CLI;
 
@@ -20,6 +21,14 @@ if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
 }
 
 var hookRegistry = HookRegistry.LoadFromDefaultLocations();
+if (string.IsNullOrWhiteSpace(apiUrl))
+    apiUrl = hookRegistry.Settings.TelemetryEndpoint ?? "";
+
+if (string.Equals(args[0], "--orchestrate-prompt", StringComparison.Ordinal))
+{
+    await OrchestratePrompt(args.Skip(1).ToArray(), apiUrl, hookRegistry);
+    return;
+}
 
 string? shimCommand = GetShimCommandName();
 string commandName = shimCommand ?? args[0];
@@ -148,6 +157,97 @@ static async Task OptimizePrompt(string[] promptArgs, string promptApiUrl)
     }
 
     Console.WriteLine(responseBody);
+}
+
+static async Task OrchestratePrompt(
+    string[] promptArgs,
+    string apiUrl,
+    HookRegistry hookRegistry)
+{
+    bool dryRun = promptArgs.Any(arg => string.Equals(arg, "--dry-run", StringComparison.Ordinal));
+    string[] filteredArgs = promptArgs
+        .Where(arg => !string.Equals(arg, "--dry-run", StringComparison.Ordinal))
+        .ToArray();
+    string prompt = filteredArgs.Length > 0
+        ? string.Join(" ", filteredArgs)
+        : await Console.In.ReadToEndAsync();
+
+    HookDefinition? hook = hookRegistry.GetHook("cursor");
+    PruningStrategy strategy = hook?.PruningStrategy ?? PruningStrategy.Agentic;
+    string[] contextArgs = ExtractPromptContextArgs(prompt);
+    var contextPruning = new ContextPruningEngine(new ContextPruner())
+        .Prune(contextArgs, strategy);
+
+    if (dryRun || string.IsNullOrWhiteSpace(apiUrl))
+    {
+        WritePromptOrchestrationJson(prompt, contextPruning, dryRun ? "dry_run" : "missing_endpoint", null);
+        return;
+    }
+
+    try
+    {
+        using var client = new HttpClient();
+        var result = await new AwsLambdaClient(client).OptimizeAsync(
+            apiUrl,
+            "cursor prompt",
+            contextPruning,
+            strategy,
+            Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY"));
+        WritePromptOrchestrationJson(prompt, contextPruning, "sent", result["metrics"]);
+    }
+    catch (Exception ex) when (ex is HttpRequestException or AwsLambdaRequestException)
+    {
+        WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", null);
+    }
+}
+
+static string[] ExtractPromptContextArgs(string prompt)
+{
+    var args = new List<string>();
+    foreach (Match match in Regex.Matches(
+                 prompt,
+                 @"(?<path>[\w./\\-]+\.(cs|ts|tsx|js|jsx|py|json|ya?ml|sql|md))(?::(?<line>\d+))?",
+                 RegexOptions.IgnoreCase))
+    {
+        string path = match.Groups["path"].Value;
+        string line = match.Groups["line"].Value;
+        args.Add(string.IsNullOrWhiteSpace(line) ? path : $"{path}:{line}");
+    }
+
+    Match lineMatch = Regex.Match(prompt, @"\bline\s+(?<line>\d+)\b", RegexOptions.IgnoreCase);
+    if (lineMatch.Success && args.All(arg => !arg.Contains(':', StringComparison.Ordinal)))
+    {
+        args.Add("--line");
+        args.Add(lineMatch.Groups["line"].Value);
+    }
+
+    return args.Distinct(StringComparer.Ordinal).ToArray();
+}
+
+static void WritePromptOrchestrationJson(
+    string prompt,
+    ContextPruningResult contextPruning,
+    string status,
+    JToken? lambdaMetrics)
+{
+    int saved = Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount);
+    decimal savingsPercent = contextPruning.OriginalTokenCount > 0
+        ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
+        : 0;
+    var payload = new
+    {
+        optimized_prompt = prompt,
+        orchestration_status = status,
+        metrics = new
+        {
+            tokens_original = contextPruning.OriginalTokenCount,
+            tokens_optimized = contextPruning.PrunedTokenCount,
+            tokens_saved = saved,
+            savings_percentage = savingsPercent,
+            lambda = lambdaMetrics,
+        },
+    };
+    Console.WriteLine(JsonSerializer.Serialize(payload));
 }
 
 static string? GetShimCommandName()
