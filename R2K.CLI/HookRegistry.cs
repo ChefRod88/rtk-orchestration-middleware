@@ -94,7 +94,12 @@ public sealed class HookRegistry
             current = Directory.GetParent(current)?.FullName;
         }
 
-        return null;
+        string globalConfig = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".config",
+            "r2k",
+            "hooks.json");
+        return File.Exists(globalConfig) ? globalConfig : null;
     }
 }
 

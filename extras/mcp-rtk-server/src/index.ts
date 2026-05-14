@@ -36,17 +36,27 @@ function tokenizeCliCommand(raw: string): string[] {
 }
 
 function spawnRtk(command: string): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-  const argv = tokenizeCliCommand(command);
+  return spawnRtkArgs(tokenizeCliCommand(command));
+}
+
+function spawnRtkArgs(
+  argv: string[],
+  stdin?: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
 
     const child = spawn(RTK_EXE, argv, {
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       windowsHide: true,
     });
 
+    if (stdin !== undefined) {
+      child.stdin?.write(stdin);
+      child.stdin?.end();
+    }
     child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout += chunk.toString();
     });
@@ -58,6 +68,15 @@ function spawnRtk(command: string): Promise<{ stdout: string; stderr: string; ex
       resolve({ stdout: stdout.trimEnd(), stderr: stderr.trimEnd(), exitCode });
     });
   });
+}
+
+function renderProcessResult(result: { stdout: string; stderr: string; exitCode: number | null }): string {
+  let text = result.stdout;
+  if (result.stderr.length > 0) {
+    text += (text.length > 0 ? "\n" : "") + `---stderr---\n${result.stderr}`;
+  }
+  text += `\n---exit-code---\n${result.exitCode ?? ""}`;
+  return text;
 }
 
 const server = new McpServer(
@@ -78,13 +97,61 @@ server.registerTool(
     }),
   },
   async ({ command }) => {
-    const { stdout, stderr, exitCode } = await spawnRtk(command);
-    let text = stdout;
-    if (stderr.length > 0) {
-      text += (text.length > 0 ? "\n" : "") + `---stderr---\n${stderr}`;
+    return { content: [{ type: "text", text: renderProcessResult(await spawnRtk(command)) }] };
+  },
+);
+
+server.registerTool(
+  "r2k_orchestrate_prompt",
+  {
+    description:
+      "Runs RTK prompt orchestration against visible prompt text; use dryRun to avoid Lambda/network calls.",
+    inputSchema: z.object({
+      prompt: z.string().min(1).describe("Visible Cursor prompt text to inspect and orchestrate."),
+      dryRun: z.boolean().optional().default(false).describe("When true, skip AWS Lambda calls."),
+    }),
+  },
+  async ({ prompt, dryRun }) => {
+    const argv = ["--orchestrate-prompt"];
+    if (dryRun) {
+      argv.push("--dry-run");
     }
-    text += `\n---exit-code---\n${exitCode ?? ""}`;
-    return { content: [{ type: "text", text }] };
+    return { content: [{ type: "text", text: renderProcessResult(await spawnRtkArgs(argv, prompt)) }] };
+  },
+);
+
+server.registerTool(
+  "r2k_dry_run_context",
+  {
+    description:
+      "Runs RTK in dry-run mode for a command such as 'cursor src/File.cs:42' and returns token savings.",
+    inputSchema: z.object({
+      command: z
+        .string()
+        .min(1)
+        .describe('Registered command plus args, e.g. "cursor R2K.CLI/Program.cs:42" or "git status"'),
+    }),
+  },
+  async ({ command }) => {
+    const argv = tokenizeCliCommand(command);
+    if (!argv.includes("--dry-run")) {
+      argv.push("--dry-run");
+    }
+    return { content: [{ type: "text", text: renderProcessResult(await spawnRtkArgs(argv)) }] };
+  },
+);
+
+server.registerTool(
+  "r2k_session_report",
+  {
+    description: "Returns RTK observed Cursor session token totals.",
+    inputSchema: z.object({
+      reset: z.boolean().optional().default(false).describe("When true, reset the observed session ledger."),
+    }),
+  },
+  async ({ reset }) => {
+    const argv = [reset ? "--cursor-session-reset" : "--cursor-session-report"];
+    return { content: [{ type: "text", text: renderProcessResult(await spawnRtkArgs(argv)) }] };
   },
 );
 

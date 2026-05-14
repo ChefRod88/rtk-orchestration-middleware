@@ -136,6 +136,20 @@ cd rtk-orchestration-middleware
 bash scripts/install-rtk.sh
 ```
 
+**Global Cursor tool install**
+
+To make RTK available from any repo you open in Cursor, install the CLI, global
+hooks fallback, command shims, and Cursor MCP registration:
+
+```bash
+bash scripts/install-r2k-global.sh
+```
+
+This writes the global policy to `~/.config/r2k/hooks.json`, creates shims under
+`~/.local/share/r2k/shims`, and adds/updates `~/.cursor/mcp.json` with the
+`r2k-optimizer` server. A repo-local `hooks.json` still overrides the global
+policy when present.
+
 **Environment (required; no embedded production URL)**
 
 Set in **`~/.bashrc`**, shell profile, or **Codespace / GitHub Codespaces secrets → env** injection:
