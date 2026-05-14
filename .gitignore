@@ -4,3 +4,6 @@
 
 # Azure Functions — never commit local secrets / connection strings
 **/local.settings.json
+
+# Local publish smoke output (readme sanity build)
+func-out/
