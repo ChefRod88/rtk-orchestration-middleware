@@ -66,7 +66,7 @@ The live AWS path now uses **API Gateway to Lambda (`R2KOptimizer`) to RDS MySQL
 
 Important scope note: R2K optimizes shell commands routed through `rtk`, shims, aliases, or MCP. Cursor prompt hooks can estimate prompt-token savings and show an optimized prompt, but Cursor may require the user to resubmit that optimized prompt.
 
-New Codespaces run [`scripts/setup-r2k-codespace.sh`](scripts/setup-r2k-codespace.sh), which installs `rtk`, sets the AWS optimizer endpoint for command and prompt optimization, installs registry-driven command shims from [`.r2k/hooks.json`](.r2k/hooks.json), and adds `agent='rtk agent'` plus common command aliases. Optimized commands should show the command result first and the RTK savings summary underneath.
+New Codespaces run [`scripts/setup-r2k-codespace.sh`](scripts/setup-r2k-codespace.sh), which installs `rtk`, sets the AWS optimizer endpoint for command and prompt optimization, installs registry-driven command shims from [`.r2k/hooks.json`](.r2k/hooks.json), and adds `agent='rtk agent'` plus common command aliases. By default the terminal shows only real command output; metrics go to `~/.rtk/last-metrics.json` and Cursor agents should summarize savings once after a successful turn (`RTK_PRINT_SAVINGS=1` enables the banner in the terminal for debugging).
 
 ---
 

@@ -203,19 +203,15 @@ Test direct CLI use:
 rtk git status
 ```
 
-The command output appears first, then the RTK savings block:
+By default the terminal shows **only** the real command output (for example `git status`). Token metrics are written to `~/.rtk/last-metrics.json` for the agent to summarize **once** at the end of a successful turn.
 
-```text
-<git status output>
+To show the classic banner in the terminal for debugging:
 
-======================================
-RTK SAVINGS
-Original tokens: 2
-Optimized tokens: 2
-Tokens saved: 0
-Savings: 0%
-======================================
+```bash
+RTK_PRINT_SAVINGS=1 rtk git status
 ```
+
+Example `last-metrics.json` fields: `tokensOriginal`, `tokensOptimized`, `tokensSaved`, `savingsPercent`, `sessionTotalSavedTokens`, `commandExitCode`.
 
 ## Make Cursor Agent Terminal Commands Use R2K
 
@@ -243,7 +239,7 @@ command git status
 command dotnet build
 ```
 
-The project rule `.cursor/rules/r2k-agent-optimizer.mdc` also instructs agents to show the answer or command result first, then show RTK savings underneath.
+The project rule `.cursor/rules/r2k-agent-optimizer.mdc` also instructs agents to keep the terminal clean and summarize RTK savings once at the end of a successful turn using `~/.rtk/last-metrics.json`.
 
 ## Cursor Prompt Token Hook
 

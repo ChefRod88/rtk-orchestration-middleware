@@ -75,7 +75,10 @@ using var process = Process.Start(psi);
 
 process?.WaitForExit();
 
-PrintSavings(result["metrics"]);
+int? exitCode = process?.ExitCode;
+RecordLastMetrics(result["metrics"], optimized, exitCode);
+if (ShouldPrintSavingsToTerminal())
+    PrintSavings(result["metrics"]);
 
 if (process is not null)
     Environment.ExitCode = process.ExitCode;
@@ -241,6 +244,55 @@ static string DerivePromptApiUrl(string commandApiUrl)
     return commandApiUrl.EndsWith("OptimizeCommand", StringComparison.OrdinalIgnoreCase)
         ? string.Concat(commandApiUrl.AsSpan(0, commandApiUrl.Length - "OptimizeCommand".Length), "OptimizePrompt")
         : commandApiUrl.TrimEnd('/') + "/OptimizePrompt";
+}
+
+static bool ShouldPrintSavingsToTerminal()
+{
+    string? v = Environment.GetEnvironmentVariable("RTK_PRINT_SAVINGS");
+    return string.Equals(v, "1", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
+}
+
+static void RecordLastMetrics(JToken? metrics, string commandExecuted, int? commandExitCode)
+{
+    try
+    {
+        string dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".rtk");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, "last-metrics.json");
+
+        int? original = metrics is not null ? ReadInt(metrics, "tokens_original") : null;
+        int? optimizedTok = metrics is not null ? ReadInt(metrics, "tokens_optimized") : null;
+        int? saved = original.HasValue && optimizedTok.HasValue
+            ? Math.Max(0, original.Value - optimizedTok.Value)
+            : null;
+        decimal? percent = metrics is not null ? ReadDecimal(metrics, "savings_percentage") : null;
+        int? sessionTotal = metrics is not null ? ReadInt(metrics, "total_session_savings") : null;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["writtenAtUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+            ["commandExecuted"] = commandExecuted,
+            ["commandExitCode"] = commandExitCode,
+            ["tokensOriginal"] = original,
+            ["tokensOptimized"] = optimizedTok,
+            ["tokensSaved"] = saved,
+            ["savingsPercent"] = percent,
+            ["sessionTotalSavedTokens"] = sessionTotal,
+        };
+
+        var json = JsonSerializer.Serialize(
+            payload,
+            new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(path, json);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"RTK warning: could not write last-metrics.json: {ex.Message}");
+    }
 }
 
 static void PrintSavings(JToken? metrics)

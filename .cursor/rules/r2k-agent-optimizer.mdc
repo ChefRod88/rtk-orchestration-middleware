@@ -2,7 +2,7 @@
 
 ## Goal
 
-When working in this repository, route shell commands through the R2K optimizer whenever practical so the user can see command output first and token savings second.
+When working in this repository, route shell commands through the R2K optimizer whenever practical. The `rtk` CLI does **not** print the RTK savings banner to the terminal by default, so the integrated terminal stays clean while commands run.
 
 ## Required behavior
 
@@ -16,7 +16,9 @@ When working in this repository, route shell commands through the R2K optimizer 
   - `git='rtk git'`
   - `npm='rtk npm'`
   - `npx='rtk npx'`
-- After command execution, show the answer/result first, then report the RTK savings summary underneath.
+- After you successfully finish the user request in Agent or Composer, add **one** short **RTK savings** section at the **end** of your assistant message (not after every shell line). Read `~/.rtk/last-metrics.json` if it exists and was updated during this turn (`writtenAtUtc` / `commandExitCode`). Summarize tokens saved, savings percent, and session total if present. If the file is missing or `commandExitCode` is non-zero, omit savings or say the last run did not complete successfully.
+- Do **not** paste the full RTK banner into chat unless the user asks; a single compact paragraph or bullet list is enough.
+- For local debugging only, the user can enable terminal savings with `RTK_PRINT_SAVINGS=1` before running `rtk`.
 - Do not claim that R2K optimizes Cursor natural-language prompts directly. R2K optimizes terminal commands routed through `rtk`, aliases, or MCP.
 - For natural-language prompts, R2K can estimate and suggest prompt-token savings through Cursor hooks. Cursor may require the user to resubmit the optimized prompt.
 
