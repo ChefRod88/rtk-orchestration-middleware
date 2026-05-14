@@ -6,6 +6,10 @@
 **/node_modules/
 extras/mcp-rtk-server/dist/
 
+# Python hook cache
+**/__pycache__/
+*.pyc
+
 # Azure Functions — never commit local secrets / connection strings
 **/local.settings.json
 
