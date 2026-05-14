@@ -14,6 +14,19 @@ var promptApiUrl = Environment.GetEnvironmentVariable("RTK_PROMPT_API_URL")
 
 if (args.Length == 0) return;
 
+if (string.Equals(args[0], "--cursor-session-report", StringComparison.Ordinal))
+{
+    CursorSessionMeter.PrintReport();
+    return;
+}
+
+if (string.Equals(args[0], "--cursor-session-reset", StringComparison.Ordinal))
+{
+    CursorSessionMeter.Reset();
+    Console.WriteLine("Observed Cursor session metrics reset.");
+    return;
+}
+
 if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
 {
     await OptimizePrompt(args.Skip(1).ToArray(), promptApiUrl);
@@ -177,10 +190,18 @@ static async Task OrchestratePrompt(
     string[] contextArgs = ExtractPromptContextArgs(prompt);
     var contextPruning = new ContextPruningEngine(new ContextPruner())
         .Prune(contextArgs, strategy);
+    int promptTokens = CursorSessionMeter.EstimateTokens(prompt);
+    int hookObservedTokens = int.TryParse(
+        Environment.GetEnvironmentVariable("RTK_CURSOR_HOOK_TOKEN_ESTIMATE"),
+        out int parsedHookTokens)
+        ? parsedHookTokens
+        : 0;
 
     if (dryRun || string.IsNullOrWhiteSpace(apiUrl))
     {
-        WritePromptOrchestrationJson(prompt, contextPruning, dryRun ? "dry_run" : "missing_endpoint", null);
+        string status = dryRun ? "dry_run" : "missing_endpoint";
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, status);
+        WritePromptOrchestrationJson(prompt, contextPruning, status, null);
         return;
     }
 
@@ -193,12 +214,35 @@ static async Task OrchestratePrompt(
             contextPruning,
             strategy,
             Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY"));
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "sent");
         WritePromptOrchestrationJson(prompt, contextPruning, "sent", result["metrics"]);
     }
     catch (Exception ex) when (ex is HttpRequestException or AwsLambdaRequestException)
     {
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "failed_open");
         WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", null);
     }
+}
+
+static void RecordPromptSessionEvent(
+    int promptTokens,
+    int hookObservedTokens,
+    ContextPruningResult contextPruning,
+    string status)
+{
+    int original = Math.Max(
+        hookObservedTokens,
+        promptTokens + contextPruning.OriginalTokenCount);
+    int optimized = promptTokens + contextPruning.PrunedTokenCount;
+    int saved = Math.Max(0, original - optimized);
+    CursorSessionMeter.Record(new CursorSessionEvent(
+        DateTimeOffset.UtcNow,
+        "cursor_prompt",
+        status,
+        "cursor prompt",
+        original,
+        optimized,
+        saved));
 }
 
 static string[] ExtractPromptContextArgs(string prompt)
@@ -387,11 +431,34 @@ static void RecordLastMetrics(
             payload,
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(path, json);
+        RecordCommandSessionEvent(metrics, commandExecuted, commandExitCode, contextPruning);
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
     {
         Console.Error.WriteLine($"RTK warning: could not write last-metrics.json: {ex.Message}");
     }
+}
+
+static void RecordCommandSessionEvent(
+    JToken? metrics,
+    string commandExecuted,
+    int? commandExitCode,
+    ContextPruningResult? contextPruning)
+{
+    int commandOriginal = metrics is not null ? ReadInt(metrics, "tokens_original") ?? 0 : 0;
+    int commandOptimized = metrics is not null ? ReadInt(metrics, "tokens_optimized") ?? commandOriginal : commandOriginal;
+    int contextOriginal = contextPruning?.OriginalTokenCount ?? 0;
+    int contextPruned = contextPruning?.PrunedTokenCount ?? contextOriginal;
+    int original = commandOriginal + contextOriginal;
+    int optimized = commandOptimized + contextPruned;
+    CursorSessionMeter.Record(new CursorSessionEvent(
+        DateTimeOffset.UtcNow,
+        "rtk_command",
+        commandExitCode == 0 ? "completed" : "failed",
+        commandExecuted,
+        original,
+        optimized,
+        Math.Max(0, original - optimized)));
 }
 
 static void PrintSavings(JToken? metrics)

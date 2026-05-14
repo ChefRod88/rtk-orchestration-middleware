@@ -372,3 +372,14 @@ public sealed class SensitiveDataRedactorTests
         Assert.Contains("[REDACTED]", redacted);
     }
 }
+
+public sealed class CursorSessionMeterTests
+{
+    [Fact]
+    public void EstimateTokens_uses_four_character_heuristic()
+    {
+        Assert.Equal(0, CursorSessionMeter.EstimateTokens(""));
+        Assert.Equal(1, CursorSessionMeter.EstimateTokens("abcd"));
+        Assert.Equal(2, CursorSessionMeter.EstimateTokens("abcde"));
+    }
+}
