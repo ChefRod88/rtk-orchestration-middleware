@@ -197,9 +197,13 @@ static async Task OrchestratePrompt(
         return;
     }
 
+    PromptIntent intent = PromptIntent.Parse(prompt);
     HookDefinition? hook = hookRegistry.GetHook("cursor");
     PruningStrategy strategy = hook?.PruningStrategy ?? PruningStrategy.Agentic;
-    ContextAnalysisResult analysis = new ContextAnalyzer().Analyze(prompt, Directory.GetCurrentDirectory());
+    ContextAnalysisResult analysis = new ContextAnalyzer().Analyze(
+        intent.CleanPrompt,
+        Directory.GetCurrentDirectory(),
+        intent.ForceWorkspaceScan);
     string[] contextArgs = analysis.ContextArgs.ToArray();
     var contextPruning = new ContextPruningEngine(new ContextPruner())
         .Prune(contextArgs, strategy);
@@ -217,7 +221,7 @@ static async Task OrchestratePrompt(
     {
         string status = dryRun ? "dry_run" : "missing_endpoint";
         RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, status);
-        WritePromptOrchestrationJson(prompt, contextPruning, status, analysis, null);
+        WritePromptOrchestrationJson(prompt, intent.CleanPrompt, contextPruning, status, analysis, null);
         return;
     }
 
@@ -231,12 +235,12 @@ static async Task OrchestratePrompt(
             strategy,
             Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY"));
         RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, "sent");
-        WritePromptOrchestrationJson(prompt, contextPruning, "sent", analysis, result["metrics"]);
+        WritePromptOrchestrationJson(prompt, intent.CleanPrompt, contextPruning, "sent", analysis, result["metrics"]);
     }
     catch (Exception ex) when (ex is HttpRequestException or AwsLambdaRequestException)
     {
         RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, "failed_open");
-        WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", analysis, null);
+        WritePromptOrchestrationJson(prompt, intent.CleanPrompt, contextPruning, "failed_open", analysis, null);
     }
 }
 
@@ -277,13 +281,14 @@ static void RecordPromptSessionEvent(
 }
 
 static void WritePromptOrchestrationJson(
-    string prompt,
+    string originalPrompt,
+    string cleanPrompt,
     ContextPruningResult contextPruning,
     string status,
     ContextAnalysisResult analysis,
     JToken? lambdaMetrics)
 {
-    int promptTokens = CursorSessionMeter.EstimateTokens(prompt);
+    int promptTokens = CursorSessionMeter.EstimateTokens(originalPrompt);
     int rawPayloadTokens = promptTokens + contextPruning.OriginalTokenCount;
     int prunedPayloadTokens = promptTokens + contextPruning.PrunedTokenCount;
     int saved = Math.Max(0, rawPayloadTokens - prunedPayloadTokens);
@@ -299,7 +304,7 @@ static void WritePromptOrchestrationJson(
         savingsPercent));
     var payload = new
     {
-        optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved, savingsPercent),
+        optimized_prompt = BuildOptimizedPrompt(cleanPrompt, contextPruning, saved, savingsPercent),
         orchestration_status = status,
         context_discovery = new
         {

@@ -201,6 +201,39 @@ public sealed class ContextPrunerTests
             File.Delete(tempFile);
         }
     }
+
+    [Fact]
+    public void Prune_keeps_structural_markdown_context()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.md");
+        File.WriteAllText(
+            tempFile,
+            """
+            # Project Title
+
+            Intro paragraph.
+
+            ## Usage
+
+            - Run setup
+            - Restart Cursor
+            """);
+
+        try
+        {
+            var pruner = new ContextPruner();
+
+            string pruned = pruner.Prune(tempFile);
+
+            Assert.Contains("# Project Title", pruned);
+            Assert.Contains("## Usage", pruned);
+            Assert.Contains("- Run setup", pruned);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }
 
 public sealed class HookRegistryTests
@@ -279,6 +312,56 @@ public sealed class ContextAnalyzerTests
         {
             Directory.Delete(tempDir, recursive: true);
         }
+    }
+
+    [Fact]
+    public void Analyze_marks_forced_workspace_discovery_for_rtk_triggered_prompt()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string file = Path.Combine(tempDir, "OrchestratorNotes.md");
+        File.WriteAllText(file, "# Orchestrator\nThis file explains orchestration.");
+
+        try
+        {
+            var analyzer = new ContextAnalyzer();
+
+            ContextAnalysisResult result = analyzer.Analyze(
+                "explain orchestrator",
+                tempDir,
+                forceWorkspaceScan: true);
+
+            Assert.Equal("forced-workspace-discovery", result.Strategy);
+            Assert.Equal([Path.GetFullPath(file)], result.ContextArgs);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+}
+
+public sealed class PromptIntentTests
+{
+    [Theory]
+    [InlineData("rtk explain this repo", "explain this repo")]
+    [InlineData("RTK: explain this repo", "explain this repo")]
+    [InlineData("rtk", "Review this workspace and summarize the relevant code.")]
+    public void Parse_detects_plain_rtk_prefix_and_cleans_prompt(string prompt, string expected)
+    {
+        PromptIntent intent = PromptIntent.Parse(prompt);
+
+        Assert.True(intent.ForceWorkspaceScan);
+        Assert.Equal(expected, intent.CleanPrompt);
+    }
+
+    [Fact]
+    public void Parse_leaves_regular_prompt_unchanged()
+    {
+        PromptIntent intent = PromptIntent.Parse("explain this repo");
+
+        Assert.False(intent.ForceWorkspaceScan);
+        Assert.Equal("explain this repo", intent.CleanPrompt);
     }
 }
 

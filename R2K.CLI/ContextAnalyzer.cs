@@ -16,7 +16,9 @@ public sealed class ContextAnalyzer
         ".yml",
         ".yaml",
         ".sql",
-        ".md"
+        ".md",
+        ".sln",
+        ".csproj"
     ];
 
     private static readonly string[] IgnoredPathParts =
@@ -30,6 +32,9 @@ public sealed class ContextAnalyzer
     ];
 
     public ContextAnalysisResult Analyze(string prompt, string workspaceRoot)
+        => Analyze(prompt, workspaceRoot, forceWorkspaceScan: false);
+
+    public ContextAnalysisResult Analyze(string prompt, string workspaceRoot, bool forceWorkspaceScan)
     {
         ArgumentNullException.ThrowIfNull(prompt);
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
@@ -59,12 +64,22 @@ public sealed class ContextAnalyzer
             .ToArray();
 
         if (candidates.Length > 0)
-            return new ContextAnalysisResult(candidates, "workspace-discovery", "Selected files by prompt keyword overlap.");
+            return new ContextAnalysisResult(
+                candidates,
+                forceWorkspaceScan ? "forced-workspace-discovery" : "workspace-discovery",
+                forceWorkspaceScan
+                    ? "RTK trigger forced workspace discovery by prompt keyword overlap."
+                    : "Selected files by prompt keyword overlap.");
 
         string? fallback = FindPrimaryProjectFile(workspaceRoot);
         return fallback is null
             ? new ContextAnalysisResult([], "no-context", "No relevant workspace context discovered.")
-            : new ContextAnalysisResult([fallback], "workspace-fallback", "Selected primary project file as minimal fallback context.");
+            : new ContextAnalysisResult(
+                [fallback],
+                forceWorkspaceScan ? "forced-workspace-fallback" : "workspace-fallback",
+                forceWorkspaceScan
+                    ? "RTK trigger forced primary project file fallback context."
+                    : "Selected primary project file as minimal fallback context.");
     }
 
     public static IReadOnlyList<string> ExtractExplicitContextArgs(string prompt)
@@ -123,11 +138,24 @@ public sealed class ContextAnalyzer
     }
 
     private static string? FindPrimaryProjectFile(string workspaceRoot)
-        => Directory.EnumerateFiles(workspaceRoot, "*.csproj", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(workspaceRoot, "package.json", SearchOption.AllDirectories))
+        => Directory.EnumerateFiles(workspaceRoot, "*.*", SearchOption.AllDirectories)
             .Where(IsCandidateFile)
-            .OrderBy(path => path.Length)
+            .OrderBy(path => PreferredFallbackRank(Path.GetFileName(path)))
+            .ThenBy(path => path.Length)
             .FirstOrDefault();
+
+    private static int PreferredFallbackRank(string fileName)
+        => fileName.ToLowerInvariant() switch
+        {
+            "readme.md" => 0,
+            var name when name.EndsWith(".sln", StringComparison.Ordinal) => 1,
+            var name when name.EndsWith(".csproj", StringComparison.Ordinal) => 2,
+            "program.cs" => 3,
+            "function.cs" => 4,
+            "hooks.json" => 5,
+            "package.json" => 6,
+            _ => 100,
+        };
 }
 
 public sealed record ContextAnalysisResult(
