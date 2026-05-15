@@ -210,37 +210,41 @@ Non-code files (Markdown, JSON, YAML) use a lighter structural pass so README-st
 
 ---
 
-## Windows setup
+## Linux-only setup (recommended if you use Codespace / SSH)
 
-Cursor on Windows needs **Windows paths** in `mcp.json`, not Linux/Codespace paths.
+If you use **Windows Cursor** but develop on **Linux** (Codespace, Remote-SSH, Dev Container), do **not** install RTK on Windows. A Linux install that wrote `/workspace/...` into MCP config will break on Windows as:
 
-```powershell
-cd $env:USERPROFILE\rtk-orchestration-middleware
-cd .\extras\mcp-rtk-server
-npm ci
-npm run build
-cd ..\..
-dotnet publish .\R2K.CLI\R2K.CLI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+```text
+Cannot find module 'C:\workspace\extras\mcp-rtk-server\dist\index.js'
 ```
 
-Point `%USERPROFILE%\.cursor\mcp.json` at:
+**On Windows:** remove or disable `r2k-optimizer` in `C:\Users\<you>\.cursor\mcp.json`, or run:
 
-- `...\extras\mcp-rtk-server\dist\index.js`
-- `...\R2K.CLI\bin\Release\net8.0\win-x64\publish\R2K.CLI.exe` as `RTK_CLI_PATH`
+```bash
+bash scripts/strip-r2k-mcp-entry.sh
+```
 
-Restart Cursor after editing MCP or hooks.
+**On Linux only:** `bash scripts/install-r2k-global.sh`, then open the repo in a **remote** Cursor session.
+
+Full walkthrough: **[LINUX_ONLY_SETUP.md](LINUX_ONLY_SETUP.md)**.
 
 ---
 
 ## Troubleshooting
 
-### MCP: module not found
+### MCP: module not found (`C:\workspace\...` on Windows)
 
-`mcp.json` `args[0]` must point at a built `dist/index.js` on **your** machine:
+**Cause:** Windows Cursor is loading a Linux/Codespace MCP path that does not exist locally.
+
+**Fix (Linux-only):** disable `r2k-optimizer` on Windows (see [LINUX_ONLY_SETUP.md](LINUX_ONLY_SETUP.md)); install RTK on Linux and use Remote-SSH/Codespace/Dev Container.
+
+**Fix (same machine):** build MCP where Cursor runs Node:
 
 ```bash
 cd extras/mcp-rtk-server && npm ci && npm run build
 ```
+
+Ensure `~/.cursor/mcp.json` `args[0]` points at that machine's real `dist/index.js` path.
 
 ### `npm ci` intercepted by RTK
 
@@ -295,5 +299,6 @@ rtk --cursor-session-report
 | Doc | Audience |
 |-----|----------|
 | [README.md](../README.md) | Project overview, architecture, CI/CD |
+| [LINUX_ONLY_SETUP.md](LINUX_ONLY_SETUP.md) | Linux-only / no Windows MCP (Codespace, SSH) |
 | [USAGE.md](USAGE.md) | Operators: AWS, Lambda, hooks, MCP, test checklist |
 | [R2K.Backend.AWS/Readme.md](../R2K.Backend.AWS/Readme.md) | AWS Lambda deploy and payload contract |
