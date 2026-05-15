@@ -1,8 +1,8 @@
 # RTK Orchestration Middleware
 
 <p align="center">
-  <strong>Intercept · Optimize · Execute · Measure</strong><br/>
-  <sub>Token-aware CLI routing for agents and developers, backed by .NET&nbsp;8 Azure Functions / AWS Lambda and MySQL telemetry.</sub>
+  <strong>Intercept · Prune · Orchestrate · Measure</strong><br/>
+  <sub>An agentic token firewall for Cursor and terminal workflows, backed by .NET&nbsp;8, AWS Lambda, MCP, and MySQL telemetry.</sub>
 </p>
 
 <p align="center">
@@ -15,6 +15,8 @@
 <summary><strong>On this page</strong></summary>
 
 - [What this is](#what-this-is)
+- [Why it matters](#why-it-matters)
+- [Use it now](#use-it-now)
 - [Current AWS/Codespaces usage guide](#current-awscodespaces-usage-guide)
 - [Critical: Function App, not Web App](#critical-use-an-azure-function-app-not-a-web-app)
 - [Repository layout](#repository-layout)
@@ -34,27 +36,65 @@
 
 ## What this is
 
-**R2K** sits between your shell (or agent) and everyday tools like `npm`, `git`, and `npx`. A thin **Linux `rtk` binary** forwards the full command string to an **`OptimizeCommand`** HTTP endpoint. The **Azure Function** (isolated worker):
+**R2K** sits between Cursor, your terminal, and your cloud optimizer. Instead of letting AI workflows inhale every line of a repo, RTK builds a curated context package: targeted line windows, method signatures, git diffs, prompt text, and telemetry. It is designed to reduce noisy context before it reaches expensive model calls.
 
-- counts tokens with **Tiktoken** (GPT-family encodings),
-- condenses the command string (whitespace + duplicate flags),
-- persists **OriginalTokens**, **OptimizedTokens**, **SavingsPercent**, **Command**, and **Timestamp** to **`TokenLogs`** in **Azure SQL** (when configured),
-- returns JSON the CLI uses to **run the optimized command** locally and **print savings**.
+Think of it as a **surgical token firewall**:
+
+- **Policy**: `hooks.json` decides which commands/tools are intercepted.
+- **Interception**: global shims and Cursor MCP route work through `rtk`.
+- **Pruning**: local context is reduced with `minimal`, `diff-only`, or `agentic` strategies.
+- **Cloud orchestration**: AWS Lambda validates, refines, logs, and returns optimized output.
+- **Measurement**: reports show observed prompt/session savings from RTK-routed flows.
+
+### Why it matters
+
+Large AI prompts often fail because they carry too much irrelevant code. RTK turns “send the whole pantry” into a focused mise en place: only the ingredients the agent needs for the current task. In recent smoke tests, RTK pruned a visible Cursor prompt from roughly **4,800 observed context tokens** to about **220**, a **95% observed reduction** for that RTK-routed flow.
+
+### Use it now
+
+For end users, start here:
+
+**[RTK End-User Guide](docs/END_USER_GUIDE.md)**
+
+Install globally:
+
+```bash
+bash scripts/install-r2k-global.sh
+```
+
+Then restart Cursor and verify `r2k-optimizer` appears under **Settings -> Tools & MCP**.
+
+Common commands:
+
+```bash
+rtk cursor R2K.CLI/Program.cs:42 --dry-run
+rtk --last-prompt-savings
+rtk --cursor-session-report
+```
+
+**R2K** also still supports the original command-optimizer path. A thin **`rtk` binary** can forward command and context payloads to an **`OptimizeCommand`** HTTP endpoint. The backend:
+
+- counts command tokens with **Tiktoken**,
+- applies command/context optimization,
+- persists command and pruning telemetry to **`TokenLogs`**,
+- returns JSON the CLI uses to run optimized commands and print savings.
 
 ```mermaid
 flowchart LR
   subgraph client [Client layer]
-    Bash[Bash_aliases]
+    Cursor[Cursor_MCP_and_hooks]
+    Shims[Global_command_shims]
     RTK[rtk_CLI]
-    Bash --> RTK
+    Cursor --> RTK
+    Shims --> RTK
   end
-  subgraph cloud [Azure]
-    Fn[Function_App_isolated]
-    Sql[(Azure_SQL)]
-    RTK -->|HTTPS_POST_JSON| Fn
+  subgraph cloud [Cloud layer]
+    Fn[AWS_Lambda_or_Azure_Function]
+    Sql[(MySQL_or_SQL_telemetry)]
+    RTK -->|Pruned_payload| Fn
     Fn --> Sql
   end
-  RTK -->|bash_minus_c| Exec[Local_execution]
+  RTK -->|Optimized_command| Exec[Local_execution]
   Fn -->|JSON| RTK
 ```
 
@@ -62,11 +102,11 @@ flowchart LR
 
 ## Current AWS/Codespaces usage guide
 
-The live AWS path now uses **API Gateway to Lambda (`R2KOptimizer`) to RDS MySQL (`r2k_telemetry.TokenLogs`)**. For the current end-to-end setup, deployment notes, Cursor Agent prompt hooks, command shims, MCP option, and test checklist, see [`docs/USAGE.md`](docs/USAGE.md).
+The live AWS path now uses **API Gateway to Lambda (`R2KOptimizer`) to RDS MySQL (`r2k_telemetry.TokenLogs`)**. For hands-on usage, see the **[RTK End-User Guide](docs/END_USER_GUIDE.md)**. For deployment notes, Cursor Agent prompt hooks, command shims, MCP details, and test checklist, see [`docs/USAGE.md`](docs/USAGE.md).
 
 Important scope note: R2K optimizes shell commands routed through `rtk`, shims, aliases, or MCP. Cursor prompt hooks can estimate prompt-token savings and show an optimized prompt, but Cursor may require the user to resubmit that optimized prompt.
 
-New Codespaces run [`scripts/setup-r2k-codespace.sh`](scripts/setup-r2k-codespace.sh), which installs `rtk`, sets the AWS optimizer endpoint for command and prompt optimization, installs registry-driven command shims from [`.r2k/hooks.json`](.r2k/hooks.json), and adds `agent='rtk agent'` plus common command aliases. By default the terminal shows only real command output; metrics go to `~/.rtk/last-metrics.json` and Cursor agents should summarize savings once after a successful turn (`RTK_PRINT_SAVINGS=1` enables the banner in the terminal for debugging).
+New Codespaces run [`scripts/setup-r2k-codespace.sh`](scripts/setup-r2k-codespace.sh), which installs `rtk`, sets the AWS optimizer endpoint for command and prompt optimization, and installs registry-driven command shims from root [`hooks.json`](hooks.json). For global use across repos and Cursor windows, run [`scripts/install-r2k-global.sh`](scripts/install-r2k-global.sh). By default the terminal shows real command output plus explicit RTK reports on demand; metrics go to `~/.rtk/last-metrics.json`, `~/.rtk/latest-prompt-savings.json`, and `~/.rtk/cursor-session.jsonl`.
 
 ---
 
