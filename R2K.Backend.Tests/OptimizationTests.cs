@@ -1,4 +1,5 @@
 using R2K.Backend;
+using R2K.CLI;
 using Tiktoken;
 
 namespace R2K.Backend.Tests;
@@ -126,5 +127,259 @@ public sealed class PromptOptimizationServiceTests
         Assert.Equal("please fix this", metrics.OptimizedPrompt);
         Assert.True(metrics.TokensOriginal >= metrics.TokensOptimized);
         Assert.Equal(metrics.TokensOriginal - metrics.TokensOptimized, metrics.TokensSaved);
+    }
+}
+
+public sealed class ContextPrunerTests
+{
+    [Fact]
+    public void Prune_returns_structural_context_without_method_body()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            using System;
+
+            namespace Demo;
+
+            public sealed class Worker
+            {
+                public string Name { get; init; } = "default";
+
+                public async Task RunAsync(string input)
+                {
+                    Console.WriteLine(input);
+                    await Task.Delay(100);
+                    Console.WriteLine("done");
+                }
+            }
+            """);
+
+        try
+        {
+            var pruner = new ContextPruner();
+
+            string pruned = pruner.Prune(tempFile);
+
+            Assert.Contains("using System;", pruned);
+            Assert.Contains("namespace Demo;", pruned);
+            Assert.Contains("public sealed class Worker", pruned);
+            Assert.Contains("public async Task RunAsync(string input) {", pruned);
+            Assert.Contains("// ... [logic removed] ...", pruned);
+            Assert.DoesNotContain("Task.Delay", pruned);
+            Assert.DoesNotContain("Console.WriteLine", pruned);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void Prune_includes_targeted_line_window_when_line_is_provided()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllLines(
+            tempFile,
+            Enumerable.Range(1, 20).Select(i => $"line {i}"));
+
+        try
+        {
+            var pruner = new ContextPruner();
+
+            string pruned = pruner.Prune(tempFile, targetLine: 10, contextRadius: 2);
+
+            Assert.Contains("Targeted context window around line 10", pruned);
+            Assert.Contains("// L8: line 8", pruned);
+            Assert.Contains("// L10: line 10", pruned);
+            Assert.Contains("// L12: line 12", pruned);
+            Assert.DoesNotContain("// L7: line 7", pruned);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+}
+
+public sealed class HookRegistryTests
+{
+    [Fact]
+    public void Load_supports_versioned_hooks_document_with_settings_and_strategy_aliases()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.json");
+        File.WriteAllText(
+            tempFile,
+            """
+            {
+              "version": "1.0.0",
+              "settings": {
+                "telemetry_endpoint": "https://example.test/OptimizeCommand",
+                "default_mode": "prune"
+              },
+              "hooks": [
+                { "command": "git", "strategy": "diff-only" },
+                { "command": "cursor", "strategy": "agentic" }
+              ]
+            }
+            """);
+
+        try
+        {
+            HookRegistry registry = HookRegistry.Load(tempFile);
+
+            Assert.Equal("https://example.test/OptimizeCommand", registry.Settings.TelemetryEndpoint);
+            Assert.Equal("prune", registry.Settings.DefaultMode);
+            Assert.Equal(PruningStrategy.DiffOnly, registry.GetPruningStrategy("git"));
+            Assert.Equal(PruningStrategy.Agentic, registry.GetPruningStrategy("cursor"));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+}
+
+public sealed class ContextPruningEngineTests
+{
+    [Fact]
+    public void Prune_uses_agentic_strategy_to_reduce_file_context_tokens()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            public sealed class Worker
+            {
+                public void Run()
+                {
+                    var longValue = "this is intentionally verbose internal logic";
+                    Console.WriteLine(longValue);
+                    Console.WriteLine(longValue);
+                    Console.WriteLine(longValue);
+                }
+            }
+            """);
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([tempFile], PruningStrategy.Agentic);
+
+            Assert.Equal([Path.GetFullPath(tempFile)], result.Files);
+            Assert.True(result.OriginalTokenCount > result.PrunedTokenCount);
+            Assert.Contains("// ... [logic removed] ...", result.PrunedContext);
+            Assert.DoesNotContain("intentionally verbose internal logic", result.PrunedContext);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void Prune_keeps_minimal_strategy_unpruned()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(tempFile, "public sealed class Worker { }");
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([tempFile], PruningStrategy.Minimal);
+
+            Assert.Equal(result.OriginalTokenCount, result.PrunedTokenCount);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void Prune_detects_line_reference_from_file_argument()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.cs");
+        File.WriteAllText(
+            tempFile,
+            """
+            public sealed class Worker
+            {
+                public void Run()
+                {
+                    Console.WriteLine("line four");
+                }
+            }
+            """);
+
+        try
+        {
+            var engine = new ContextPruningEngine(new ContextPruner());
+
+            ContextPruningResult result = engine.Prune([$"{tempFile}:4"], PruningStrategy.Agentic);
+
+            Assert.Equal([Path.GetFullPath(tempFile)], result.Files);
+            Assert.Contains("Targeted context window around line 4", result.PrunedContext);
+            Assert.Contains("Console.WriteLine", result.PrunedContext);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+}
+
+public sealed class AwsLambdaClientTests
+{
+    [Fact]
+    public void CreatePayload_includes_command_pruned_context_and_token_counts()
+    {
+        var context = new ContextPruningResult(
+            ["/tmp/demo.cs"],
+            "public sealed class Demo { }",
+            OriginalTokenCount: 100,
+            PrunedTokenCount: 20);
+
+        AwsLambdaPayload payload = AwsLambdaClient.CreatePayload(
+            "cursor /tmp/demo.cs",
+            context,
+            PruningStrategy.Agentic);
+
+        Assert.Equal("cursor /tmp/demo.cs", payload.Command);
+        Assert.Equal("public sealed class Demo { }", payload.PrunedContext);
+        Assert.Equal(100, payload.OriginalTokenCount);
+        Assert.Equal(20, payload.PrunedTokenCount);
+        Assert.Equal("agentic", payload.PruningStrategy);
+    }
+}
+
+public sealed class SensitiveDataRedactorTests
+{
+    [Fact]
+    public void Redact_masks_common_secret_and_phi_patterns()
+    {
+        string raw = "Password=hunter2; api_key='abc123' Authorization: Bearer token-value SSN 123-45-6789";
+
+        string redacted = SensitiveDataRedactor.Redact(raw);
+
+        Assert.DoesNotContain("hunter2", redacted);
+        Assert.DoesNotContain("abc123", redacted);
+        Assert.DoesNotContain("token-value", redacted);
+        Assert.DoesNotContain("123-45-6789", redacted);
+        Assert.Contains("[REDACTED]", redacted);
+    }
+}
+
+public sealed class CursorSessionMeterTests
+{
+    [Fact]
+    public void EstimateTokens_uses_four_character_heuristic()
+    {
+        Assert.Equal(0, CursorSessionMeter.EstimateTokens(""));
+        Assert.Equal(1, CursorSessionMeter.EstimateTokens("abcd"));
+        Assert.Equal(2, CursorSessionMeter.EstimateTokens("abcde"));
     }
 }

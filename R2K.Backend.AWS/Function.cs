@@ -38,15 +38,22 @@ public class Function
         APIGatewayProxyRequest request,
         ILambdaContext context)
     {
-        var data = JsonConvert.DeserializeObject<dynamic>(request.Body);
-        string rawCommand = data?.command ?? "";
+        var data = JObject.Parse(request.Body ?? "{}");
+        string rawCommand = data.Value<string>("command") ?? "";
 
         if (string.IsNullOrEmpty(rawCommand))
             return JsonResponse(400, new { error = "command is required" });
 
+        var orchestratorRequest = OrchestratorRequest.From(data, rawCommand);
+        var plan = OrchestratorPipeline.Plan(orchestratorRequest);
         string optimizedCommand = CliCommandOptimizer.Optimize(rawCommand);
         var metrics = CalculateMetrics(rawCommand, optimizedCommand);
-        int totalSessionSavings = await PersistTelemetry("command", rawCommand, metrics, context);
+        int totalSessionSavings = await PersistTelemetry(
+            "command",
+            rawCommand,
+            metrics,
+            plan.Telemetry,
+            context);
 
         return JsonResponse(200, new
         {
@@ -57,7 +64,13 @@ public class Function
                 tokens_optimized = metrics.OptimizedTokens,
                 tokens_saved = metrics.TokensSaved,
                 savings_percentage = metrics.SavingsPercent,
-                total_session_savings = totalSessionSavings
+                total_session_savings = totalSessionSavings,
+                strategy_used = plan.Telemetry.StrategyUsed,
+                original_context_tokens = plan.Telemetry.OriginalContextTokens,
+                pruned_context_tokens = plan.Telemetry.PrunedContextTokens,
+                pruning_efficiency = plan.Telemetry.PruningEfficiency,
+                orchestration_decision = plan.Decision,
+                context_density = plan.ContextDensity
             }
         });
     }
@@ -74,7 +87,7 @@ public class Function
 
         string optimizedPrompt = PromptTextOptimizer.Optimize(rawPrompt);
         var metrics = CalculateMetrics(rawPrompt, optimizedPrompt);
-        int totalSessionSavings = await PersistTelemetry("prompt", rawPrompt, metrics, context);
+        int totalSessionSavings = await PersistTelemetry("prompt", rawPrompt, metrics, null, context);
 
         return JsonResponse(200, new
         {
@@ -123,6 +136,7 @@ public class Function
         string kind,
         string rawText,
         OptimizationMetrics metrics,
+        PruningTelemetry? pruningTelemetry,
         ILambdaContext context)
     {
         string? connString = Environment.GetEnvironmentVariable("SqlConnectionString");
@@ -138,8 +152,26 @@ public class Function
         {
             await conn.ExecuteAsync(
                 """
-                INSERT INTO TokenLogs (Kind, Command, OriginalTokens, OptimizedTokens, SavingsPercent)
-                VALUES (@kind, @cmd, @orig, @opt, @perc)
+                INSERT INTO TokenLogs (
+                    Kind,
+                    Command,
+                    OriginalTokens,
+                    OptimizedTokens,
+                    SavingsPercent,
+                    StrategyUsed,
+                    OriginalContextTokens,
+                    PrunedContextTokens,
+                    PruningEfficiency)
+                VALUES (
+                    @kind,
+                    @cmd,
+                    @orig,
+                    @opt,
+                    @perc,
+                    @strategy,
+                    @originalContextTokens,
+                    @prunedContextTokens,
+                    @pruningEfficiency)
                 """,
                 new
                 {
@@ -147,7 +179,11 @@ public class Function
                     cmd = rawText,
                     orig = metrics.OriginalTokens,
                     opt = metrics.OptimizedTokens,
-                    perc = metrics.SavingsPercent
+                    perc = metrics.SavingsPercent,
+                    strategy = pruningTelemetry?.StrategyUsed,
+                    originalContextTokens = pruningTelemetry?.OriginalContextTokens,
+                    prunedContextTokens = pruningTelemetry?.PrunedContextTokens,
+                    pruningEfficiency = pruningTelemetry?.PruningEfficiency
                 });
         }
         catch (MySqlException ex) when (ex.Number == 1054)
@@ -184,6 +220,132 @@ internal sealed record OptimizationMetrics(
     int OptimizedTokens,
     int TokensSaved,
     decimal SavingsPercent);
+
+internal sealed record PruningTelemetry(
+    string? StrategyUsed,
+    int? OriginalContextTokens,
+    int? PrunedContextTokens,
+    decimal? PruningEfficiency)
+{
+    internal static PruningTelemetry FromRequest(JObject data, string refinedContext)
+    {
+        string? strategy = data.Value<string>("strategy")
+            ?? data.Value<string>("strategy_used")
+            ?? data.Value<string>("pruning_strategy");
+        int? original = data.Value<int?>("original_token_count")
+            ?? data.Value<int?>("original_context_tokens");
+        int? payloadPruned = data.Value<int?>("pruned_token_count")
+            ?? data.Value<int?>("pruned_context_tokens");
+        int? pruned = string.IsNullOrWhiteSpace(refinedContext)
+            ? payloadPruned
+            : EstimateTokens(refinedContext);
+        decimal? efficiency = original is > 0 && pruned.HasValue
+            ? Math.Round(((decimal)(original.Value - pruned.Value) / original.Value) * 100, 2)
+            : null;
+
+        return new PruningTelemetry(strategy, original, pruned, efficiency);
+    }
+
+    private static int EstimateTokens(string value)
+        => (int)Math.Ceiling(value.Length / 4m);
+}
+
+internal sealed record OrchestratorRequest(
+    string Command,
+    string PrunedContext,
+    string? StrategyUsed,
+    int? OriginalTokenCount,
+    int? PrunedTokenCount)
+{
+    internal static OrchestratorRequest From(JObject data, string command)
+        => new(
+            command,
+            data.Value<string>("pruned_context") ?? "",
+            data.Value<string>("strategy")
+                ?? data.Value<string>("strategy_used")
+                ?? data.Value<string>("pruning_strategy"),
+            data.Value<int?>("original_token_count")
+                ?? data.Value<int?>("original_context_tokens"),
+            data.Value<int?>("pruned_token_count")
+                ?? data.Value<int?>("pruned_context_tokens"));
+}
+
+internal sealed record OrchestratorPlan(
+    string Decision,
+    decimal? ContextDensity,
+    string RefinedContext,
+    PruningTelemetry Telemetry);
+
+internal static class OrchestratorPipeline
+{
+    internal static OrchestratorPlan Plan(OrchestratorRequest request)
+    {
+        string refinedContext = ContextRefiner.Refine(request.PrunedContext);
+        var telemetry = PruningTelemetry.FromRequest(
+            new JObject
+            {
+                ["pruning_strategy"] = request.StrategyUsed,
+                ["original_token_count"] = request.OriginalTokenCount,
+                ["pruned_token_count"] = request.PrunedTokenCount,
+            },
+            refinedContext);
+        decimal? density = telemetry.OriginalContextTokens is > 0 && telemetry.PrunedContextTokens.HasValue
+            ? Math.Round((decimal)telemetry.PrunedContextTokens.Value / telemetry.OriginalContextTokens.Value, 4)
+            : null;
+        string decision = density switch
+        {
+            null => "no_context",
+            <= 0.35m => "accept",
+            <= 0.75m => "refine",
+            _ => "dense_context",
+        };
+
+        return new OrchestratorPlan(decision, density, refinedContext, telemetry);
+    }
+}
+
+internal static class ContextRefiner
+{
+    internal static string Refine(string context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+            return string.Empty;
+
+        var lines = context.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+        var refined = new List<string>(lines.Length);
+        var previousWasBlank = false;
+
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                if (!previousWasBlank)
+                    refined.Add(string.Empty);
+
+                previousWasBlank = true;
+                continue;
+            }
+
+            if (trimmed.StartsWith("// Pruned context for:", StringComparison.Ordinal)
+                || trimmed.StartsWith("using ", StringComparison.Ordinal)
+                || trimmed.StartsWith("namespace ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            refined.Add(line.TrimEnd());
+            previousWasBlank = false;
+        }
+
+        while (refined.Count > 0 && refined[^1].Length == 0)
+            refined.RemoveAt(refined.Count - 1);
+
+        return string.Join('\n', refined);
+    }
+}
 
 internal static class CliCommandOptimizer
 {

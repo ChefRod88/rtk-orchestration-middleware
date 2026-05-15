@@ -298,6 +298,34 @@ The prompt hook fails open by default, so Cursor continues normally if `rtk` or 
 
 The MCP server exposes a tool named `run_rtk_command`. It lets Cursor call `rtk` through MCP instead of relying only on shell aliases.
 
+For global Cursor use across repositories, run:
+
+```bash
+bash scripts/install-r2k-global.sh
+```
+
+The installer:
+
+1. Publishes `/usr/local/bin/rtk`.
+2. Copies root `hooks.json` to `~/.config/r2k/hooks.json`.
+3. Creates global shims in `~/.local/share/r2k/shims`.
+4. Builds `extras/mcp-rtk-server`.
+5. Safely adds or updates `r2k-optimizer` in `~/.cursor/mcp.json` while preserving other MCP servers.
+6. Installs a global `beforeSubmitPrompt` hook in `~/.cursor/hooks.json` when supported by Cursor.
+
+Lookup order is repo-local `hooks.json` first, then the global fallback at `~/.config/r2k/hooks.json`. This means any repo can use RTK immediately, while specific repos can still override policy locally.
+
+The global prompt hook is the closest available automatic mode: every visible prompt is inspected before submit, and when RTK detects savings it blocks the original prompt with an RTK-pruned prompt to resubmit. The optimized prompt instructs Cursor to append an **RTK Savings** footer to its final answer. The same latest prompt numbers are available in a terminal with `rtk --last-prompt-savings`, and the whole observed session is available with `rtk --cursor-session-report`. Cursor may still add hidden/system context outside this hook, so RTK reports observed session tokens rather than full provider-side billing tokens.
+
+The MCP server exposes:
+
+| Tool | Purpose |
+|------|---------|
+| `run_rtk_command` | Run any RTK-routed command. |
+| `r2k_orchestrate_prompt` | Run prompt orchestration against visible prompt text. |
+| `r2k_dry_run_context` | Estimate context token savings without Lambda/network calls. |
+| `r2k_session_report` | Show or reset observed Cursor session token totals. |
+
 Build the MCP server:
 
 ```bash

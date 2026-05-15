@@ -2,19 +2,74 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
+using R2K.CLI;
 
 // Override with env RTK_API_URL; Function auth: set RTK_FUNCTION_KEY (x-functions-key).
 var apiUrl = Environment.GetEnvironmentVariable("RTK_API_URL")
     ?? "";
+
+if (args.Length == 0) return;
+
+var hookRegistry = HookRegistry.LoadFromDefaultLocations();
+if (string.IsNullOrWhiteSpace(apiUrl))
+    apiUrl = hookRegistry.Settings.TelemetryEndpoint ?? "";
+
 var promptApiUrl = Environment.GetEnvironmentVariable("RTK_PROMPT_API_URL")
     ?? DerivePromptApiUrl(apiUrl);
 
-if (args.Length == 0) return;
+if (string.Equals(args[0], "--cursor-session-report", StringComparison.Ordinal))
+{
+    CursorSessionMeter.PrintReport();
+    return;
+}
+
+if (string.Equals(args[0], "--last-prompt-savings", StringComparison.Ordinal))
+{
+    CursorSessionMeter.PrintLatestPromptSavings();
+    return;
+}
+
+if (string.Equals(args[0], "--cursor-session-reset", StringComparison.Ordinal))
+{
+    CursorSessionMeter.Reset();
+    Console.WriteLine("Observed Cursor session metrics reset.");
+    return;
+}
 
 if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
 {
     await OptimizePrompt(args.Skip(1).ToArray(), promptApiUrl);
+    return;
+}
+
+if (string.Equals(args[0], "--orchestrate-prompt", StringComparison.Ordinal))
+{
+    await OrchestratePrompt(args.Skip(1).ToArray(), apiUrl, hookRegistry);
+    return;
+}
+
+string? shimCommand = GetShimCommandName();
+string commandName = shimCommand ?? args[0];
+string[] rawCommandArgs = shimCommand is null ? args.Skip(1).ToArray() : args;
+bool dryRun = rawCommandArgs.Any(arg => string.Equals(arg, "--dry-run", StringComparison.Ordinal));
+string[] commandArgs = rawCommandArgs
+    .Where(arg => !string.Equals(arg, "--dry-run", StringComparison.Ordinal))
+    .ToArray();
+HookDefinition? hook = hookRegistry.GetHook(commandName);
+if (hook is null)
+{
+    await ExecuteRealCommand(commandName, commandArgs);
+    return;
+}
+
+var contextPruning = new ContextPruningEngine(new ContextPruner())
+    .Prune(commandArgs, hook.PruningStrategy);
+
+if (dryRun)
+{
+    PrintDryRunEstimate(commandName, hook.PruningStrategy, contextPruning);
     return;
 }
 
@@ -25,24 +80,24 @@ if (string.IsNullOrWhiteSpace(apiUrl))
     return;
 }
 
-string? shimCommand = GetShimCommandName();
-if (shimCommand is not null && !IsInterceptorEnabled(shimCommand))
-{
-    await ExecuteRealCommand(shimCommand, args);
-    return;
-}
-
 string fullCommand = string.Join(" ", shimCommand is null ? args : new[] { shimCommand }.Concat(args));
 
 using var client = new HttpClient();
 var functionKey = Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY");
-if (!string.IsNullOrWhiteSpace(functionKey))
-    client.DefaultRequestHeaders.Add("x-functions-key", functionKey.Trim());
 
-HttpResponseMessage response;
+JObject result;
 try
 {
-    response = await client.PostAsJsonAsync(apiUrl, new { command = fullCommand });
+    result = await new AwsLambdaClient(client)
+        .OptimizeAsync(apiUrl, fullCommand, contextPruning, hook.PruningStrategy, functionKey);
+}
+catch (AwsLambdaRequestException ex)
+{
+    Console.Error.WriteLine($"RTK optimizer failed: {(int)ex.StatusCode} {ex.ReasonPhrase}");
+    if (!string.IsNullOrWhiteSpace(ex.ResponseBody))
+        Console.Error.WriteLine(ex.ResponseBody);
+    Environment.ExitCode = (int)ex.StatusCode;
+    return;
 }
 catch (HttpRequestException ex)
 {
@@ -50,17 +105,8 @@ catch (HttpRequestException ex)
     Environment.ExitCode = 2;
     return;
 }
-if (!response.IsSuccessStatusCode)
-{
-    var problem = await response.Content.ReadAsStringAsync();
-    Console.Error.WriteLine($"RTK optimizer failed: {(int)response.StatusCode} {response.ReasonPhrase}");
-    if (!string.IsNullOrWhiteSpace(problem))
-        Console.Error.WriteLine(problem);
-    Environment.ExitCode = (int)response.StatusCode;
-    return;
-}
 
-var result = JObject.Parse(await response.Content.ReadAsStringAsync());
+AwsLambdaClient.PrintOptimizedOutput(result, contextPruning);
 
 string optimized = result["command_executed"]!.ToString();
 
@@ -76,7 +122,7 @@ using var process = Process.Start(psi);
 process?.WaitForExit();
 
 int? exitCode = process?.ExitCode;
-RecordLastMetrics(result["metrics"], optimized, exitCode);
+RecordLastMetrics(result["metrics"], optimized, exitCode, contextPruning);
 if (ShouldPrintSavingsToTerminal())
     PrintSavings(result["metrics"]);
 
@@ -133,6 +179,163 @@ static async Task OptimizePrompt(string[] promptArgs, string promptApiUrl)
     Console.WriteLine(responseBody);
 }
 
+static async Task OrchestratePrompt(
+    string[] promptArgs,
+    string apiUrl,
+    HookRegistry hookRegistry)
+{
+    bool dryRun = promptArgs.Any(arg => string.Equals(arg, "--dry-run", StringComparison.Ordinal));
+    string[] filteredArgs = promptArgs
+        .Where(arg => !string.Equals(arg, "--dry-run", StringComparison.Ordinal))
+        .ToArray();
+    string prompt = filteredArgs.Length > 0
+        ? string.Join(" ", filteredArgs)
+        : await Console.In.ReadToEndAsync();
+
+    HookDefinition? hook = hookRegistry.GetHook("cursor");
+    PruningStrategy strategy = hook?.PruningStrategy ?? PruningStrategy.Agentic;
+    string[] contextArgs = ExtractPromptContextArgs(prompt);
+    var contextPruning = new ContextPruningEngine(new ContextPruner())
+        .Prune(contextArgs, strategy);
+    int promptTokens = CursorSessionMeter.EstimateTokens(prompt);
+    int hookObservedTokens = int.TryParse(
+        Environment.GetEnvironmentVariable("RTK_CURSOR_HOOK_TOKEN_ESTIMATE"),
+        out int parsedHookTokens)
+        ? parsedHookTokens
+        : 0;
+
+    if (dryRun || string.IsNullOrWhiteSpace(apiUrl))
+    {
+        string status = dryRun ? "dry_run" : "missing_endpoint";
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, status);
+        WritePromptOrchestrationJson(prompt, contextPruning, status, null);
+        return;
+    }
+
+    try
+    {
+        using var client = new HttpClient();
+        var result = await new AwsLambdaClient(client).OptimizeAsync(
+            apiUrl,
+            "cursor prompt",
+            contextPruning,
+            strategy,
+            Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY"));
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "sent");
+        WritePromptOrchestrationJson(prompt, contextPruning, "sent", result["metrics"]);
+    }
+    catch (Exception ex) when (ex is HttpRequestException or AwsLambdaRequestException)
+    {
+        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "failed_open");
+        WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", null);
+    }
+}
+
+static void RecordPromptSessionEvent(
+    int promptTokens,
+    int hookObservedTokens,
+    ContextPruningResult contextPruning,
+    string status)
+{
+    int original = Math.Max(
+        hookObservedTokens,
+        promptTokens + contextPruning.OriginalTokenCount);
+    int optimized = promptTokens + contextPruning.PrunedTokenCount;
+    int saved = Math.Max(0, original - optimized);
+    CursorSessionMeter.Record(new CursorSessionEvent(
+        DateTimeOffset.UtcNow,
+        "cursor_prompt",
+        status,
+        "cursor prompt",
+        original,
+        optimized,
+        saved));
+}
+
+static string[] ExtractPromptContextArgs(string prompt)
+{
+    var args = new List<string>();
+    foreach (Match match in Regex.Matches(
+                 prompt,
+                 @"(?<path>[\w./\\-]+\.(cs|ts|tsx|js|jsx|py|json|ya?ml|sql|md))(?::(?<line>\d+))?",
+                 RegexOptions.IgnoreCase))
+    {
+        string path = match.Groups["path"].Value;
+        string line = match.Groups["line"].Value;
+        args.Add(string.IsNullOrWhiteSpace(line) ? path : $"{path}:{line}");
+    }
+
+    Match lineMatch = Regex.Match(prompt, @"\bline\s+(?<line>\d+)\b", RegexOptions.IgnoreCase);
+    if (lineMatch.Success && args.All(arg => !arg.Contains(':', StringComparison.Ordinal)))
+    {
+        args.Add("--line");
+        args.Add(lineMatch.Groups["line"].Value);
+    }
+
+    return args.Distinct(StringComparer.Ordinal).ToArray();
+}
+
+static void WritePromptOrchestrationJson(
+    string prompt,
+    ContextPruningResult contextPruning,
+    string status,
+    JToken? lambdaMetrics)
+{
+    int saved = Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount);
+    decimal savingsPercent = contextPruning.OriginalTokenCount > 0
+        ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
+        : 0;
+    CursorSessionMeter.RecordLatestPromptSavings(new PromptSavingsSnapshot(
+        DateTimeOffset.UtcNow,
+        status,
+        contextPruning.OriginalTokenCount,
+        contextPruning.PrunedTokenCount,
+        saved,
+        savingsPercent));
+    var payload = new
+    {
+        optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved, savingsPercent),
+        orchestration_status = status,
+        metrics = new
+        {
+            tokens_original = contextPruning.OriginalTokenCount,
+            tokens_optimized = contextPruning.PrunedTokenCount,
+            tokens_saved = saved,
+            savings_percentage = savingsPercent,
+            lambda = lambdaMetrics,
+        },
+    };
+    Console.WriteLine(JsonSerializer.Serialize(payload));
+}
+
+static string BuildOptimizedPrompt(
+    string prompt,
+    ContextPruningResult contextPruning,
+    int saved,
+    decimal savingsPercent)
+{
+    if (saved <= 0 || string.IsNullOrWhiteSpace(contextPruning.PrunedContext))
+        return prompt;
+
+    return $"""
+    {prompt.Trim()}
+
+    Use this RTK-pruned context instead of broad workspace context:
+
+    ```text
+    {contextPruning.PrunedContext.Trim()}
+    ```
+
+    After you complete the answer, append this exact footer:
+
+    RTK Savings:
+    - Original context tokens: {contextPruning.OriginalTokenCount}
+    - Pruned context tokens: {contextPruning.PrunedTokenCount}
+    - Tokens saved: {saved}
+    - Savings: {savingsPercent.ToString("0.##", CultureInfo.InvariantCulture)}%
+    """;
+}
+
 static string? GetShimCommandName()
 {
     string invokedAs = Path.GetFileNameWithoutExtension(Environment.GetCommandLineArgs()[0]);
@@ -144,61 +347,6 @@ static string? GetShimCommandName()
     }
 
     return invokedAs;
-}
-
-static bool IsInterceptorEnabled(string command)
-{
-    string? configPath = FindHooksConfig();
-    if (configPath is null)
-        return true;
-
-    try
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(configPath));
-        if (!document.RootElement.TryGetProperty("interceptors", out var interceptors)
-            || interceptors.ValueKind != JsonValueKind.Array)
-        {
-            return true;
-        }
-
-        foreach (var interceptor in interceptors.EnumerateArray())
-        {
-            if (!interceptor.TryGetProperty("command", out var commandElement)
-                || !string.Equals(commandElement.GetString(), command, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            return !interceptor.TryGetProperty("enabled", out var enabledElement)
-                || enabledElement.ValueKind != JsonValueKind.False;
-        }
-    }
-    catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-    {
-        Console.Error.WriteLine($"RTK warning: could not read hooks config: {ex.Message}");
-    }
-
-    return true;
-}
-
-static string? FindHooksConfig()
-{
-    string? current = Directory.GetCurrentDirectory();
-    while (!string.IsNullOrWhiteSpace(current))
-    {
-        string candidate = Path.Combine(current, ".r2k", "hooks.json");
-        if (File.Exists(candidate))
-            return candidate;
-
-        current = Directory.GetParent(current)?.FullName;
-    }
-
-    string userConfig = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".config",
-        "r2k",
-        "hooks.json");
-    return File.Exists(userConfig) ? userConfig : null;
 }
 
 static async Task ExecuteRealCommand(string command, string[] args)
@@ -254,7 +402,38 @@ static bool ShouldPrintSavingsToTerminal()
         || string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase);
 }
 
-static void RecordLastMetrics(JToken? metrics, string commandExecuted, int? commandExitCode)
+static void PrintDryRunEstimate(
+    string commandName,
+    PruningStrategy strategy,
+    ContextPruningResult contextPruning)
+{
+    int saved = Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount);
+    decimal savingsPercent = contextPruning.OriginalTokenCount > 0
+        ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
+        : 0;
+
+    Console.WriteLine();
+    Console.WriteLine("======================================");
+    Console.WriteLine("Mission 2026 Token Savings Estimate");
+    Console.WriteLine("--------------------------------------");
+    Console.WriteLine($"Command: {commandName}");
+    Console.WriteLine($"Pruning strategy: {strategy.ToString().ToLowerInvariant()}");
+    Console.WriteLine($"Context files: {contextPruning.Files.Count}");
+    Console.WriteLine($"Original context tokens: {contextPruning.OriginalTokenCount}");
+    Console.WriteLine($"Pruned context tokens: {contextPruning.PrunedTokenCount}");
+    Console.WriteLine($"Estimated tokens saved: {saved}");
+    Console.WriteLine($"Estimated savings: {savingsPercent.ToString("0.##", CultureInfo.InvariantCulture)}%");
+    Console.WriteLine();
+    Console.WriteLine("Dry run only: skipped AWS Lambda request and command execution.");
+    Console.WriteLine("======================================");
+    Console.WriteLine();
+}
+
+static void RecordLastMetrics(
+    JToken? metrics,
+    string commandExecuted,
+    int? commandExitCode,
+    ContextPruningResult? contextPruning = null)
 {
     try
     {
@@ -282,17 +461,46 @@ static void RecordLastMetrics(JToken? metrics, string commandExecuted, int? comm
             ["tokensSaved"] = saved,
             ["savingsPercent"] = percent,
             ["sessionTotalSavedTokens"] = sessionTotal,
+            ["contextFiles"] = contextPruning?.Files,
+            ["contextTokensOriginal"] = contextPruning?.OriginalTokenCount,
+            ["contextTokensPruned"] = contextPruning?.PrunedTokenCount,
+            ["contextTokensSaved"] = contextPruning is not null
+                ? Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount)
+                : null,
         };
 
         var json = JsonSerializer.Serialize(
             payload,
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(path, json);
+        RecordCommandSessionEvent(metrics, commandExecuted, commandExitCode, contextPruning);
     }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
     {
         Console.Error.WriteLine($"RTK warning: could not write last-metrics.json: {ex.Message}");
     }
+}
+
+static void RecordCommandSessionEvent(
+    JToken? metrics,
+    string commandExecuted,
+    int? commandExitCode,
+    ContextPruningResult? contextPruning)
+{
+    int commandOriginal = metrics is not null ? ReadInt(metrics, "tokens_original") ?? 0 : 0;
+    int commandOptimized = metrics is not null ? ReadInt(metrics, "tokens_optimized") ?? commandOriginal : commandOriginal;
+    int contextOriginal = contextPruning?.OriginalTokenCount ?? 0;
+    int contextPruned = contextPruning?.PrunedTokenCount ?? contextOriginal;
+    int original = commandOriginal + contextOriginal;
+    int optimized = commandOptimized + contextPruned;
+    CursorSessionMeter.Record(new CursorSessionEvent(
+        DateTimeOffset.UtcNow,
+        "rtk_command",
+        commandExitCode == 0 ? "completed" : "failed",
+        commandExecuted,
+        original,
+        optimized,
+        Math.Max(0, original - optimized)));
 }
 
 static void PrintSavings(JToken? metrics)

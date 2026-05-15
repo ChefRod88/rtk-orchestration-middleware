@@ -47,14 +47,19 @@ def main():
         return
 
     rtk_path = os.environ.get("RTK_CLI_PATH", "/usr/local/bin/rtk")
+    subprocess_env = os.environ.copy()
+    serialized_hook = json.dumps(hook_input, separators=(",", ":"))
+    subprocess_env["RTK_CURSOR_HOOK_CHAR_COUNT"] = str(len(serialized_hook))
+    subprocess_env["RTK_CURSOR_HOOK_TOKEN_ESTIMATE"] = str((len(serialized_hook) + 3) // 4)
     try:
         result = subprocess.run(
-            [rtk_path, "--optimize-prompt"],
+            [rtk_path, "--orchestrate-prompt"],
             input=prompt,
             text=True,
             capture_output=True,
             timeout=float(os.environ.get("RTK_PROMPT_HOOK_TIMEOUT", "8")),
             check=False,
+            env=subprocess_env,
         )
     except (OSError, subprocess.TimeoutExpired):
         allow()
