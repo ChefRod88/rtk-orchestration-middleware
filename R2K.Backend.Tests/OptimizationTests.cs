@@ -241,6 +241,47 @@ public sealed class HookRegistryTests
     }
 }
 
+public sealed class ContextAnalyzerTests
+{
+    [Fact]
+    public void Analyze_returns_explicit_file_context_when_prompt_names_file()
+    {
+        var analyzer = new ContextAnalyzer();
+
+        ContextAnalysisResult result = analyzer.Analyze(
+            "Fix line 42 in R2K.CLI/Program.cs",
+            Directory.GetCurrentDirectory());
+
+        Assert.Equal("explicit-references", result.Strategy);
+        Assert.Contains("R2K.CLI/Program.cs", result.ContextArgs);
+        Assert.Contains("--line", result.ContextArgs);
+        Assert.Contains("42", result.ContextArgs);
+    }
+
+    [Fact]
+    public void Analyze_discovers_workspace_context_for_general_prompt()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string file = Path.Combine(tempDir, "AsyncWorker.cs");
+        File.WriteAllText(file, "public sealed class AsyncWorker { public Task RunAsync() => Task.CompletedTask; }");
+
+        try
+        {
+            var analyzer = new ContextAnalyzer();
+
+            ContextAnalysisResult result = analyzer.Analyze("How do I optimize async?", tempDir);
+
+            Assert.Equal("workspace-discovery", result.Strategy);
+            Assert.Equal([Path.GetFullPath(file)], result.ContextArgs);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+}
+
 public sealed class ContextPruningEngineTests
 {
     [Fact]

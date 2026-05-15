@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using R2K.CLI;
 
@@ -192,9 +191,16 @@ static async Task OrchestratePrompt(
         ? string.Join(" ", filteredArgs)
         : await Console.In.ReadToEndAsync();
 
+    if (prompt.Contains("--bypass-rtk", StringComparison.OrdinalIgnoreCase))
+    {
+        WriteBypassPromptJson(prompt);
+        return;
+    }
+
     HookDefinition? hook = hookRegistry.GetHook("cursor");
     PruningStrategy strategy = hook?.PruningStrategy ?? PruningStrategy.Agentic;
-    string[] contextArgs = ExtractPromptContextArgs(prompt);
+    ContextAnalysisResult analysis = new ContextAnalyzer().Analyze(prompt, Directory.GetCurrentDirectory());
+    string[] contextArgs = analysis.ContextArgs.ToArray();
     var contextPruning = new ContextPruningEngine(new ContextPruner())
         .Prune(contextArgs, strategy);
     int promptTokens = CursorSessionMeter.EstimateTokens(prompt);
@@ -203,12 +209,15 @@ static async Task OrchestratePrompt(
         out int parsedHookTokens)
         ? parsedHookTokens
         : 0;
+    int rawPayloadTokens = Math.Max(
+        hookObservedTokens,
+        promptTokens + contextPruning.OriginalTokenCount);
 
     if (dryRun || string.IsNullOrWhiteSpace(apiUrl))
     {
         string status = dryRun ? "dry_run" : "missing_endpoint";
-        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, status);
-        WritePromptOrchestrationJson(prompt, contextPruning, status, null);
+        RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, status);
+        WritePromptOrchestrationJson(prompt, contextPruning, status, analysis, null);
         return;
     }
 
@@ -221,25 +230,40 @@ static async Task OrchestratePrompt(
             contextPruning,
             strategy,
             Environment.GetEnvironmentVariable("RTK_FUNCTION_KEY"));
-        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "sent");
-        WritePromptOrchestrationJson(prompt, contextPruning, "sent", result["metrics"]);
+        RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, "sent");
+        WritePromptOrchestrationJson(prompt, contextPruning, "sent", analysis, result["metrics"]);
     }
     catch (Exception ex) when (ex is HttpRequestException or AwsLambdaRequestException)
     {
-        RecordPromptSessionEvent(promptTokens, hookObservedTokens, contextPruning, "failed_open");
-        WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", null);
+        RecordPromptSessionEvent(rawPayloadTokens, promptTokens, contextPruning, "failed_open");
+        WritePromptOrchestrationJson(prompt, contextPruning, "failed_open", analysis, null);
     }
 }
 
+static void WriteBypassPromptJson(string prompt)
+{
+    var payload = new
+    {
+        optimized_prompt = prompt.Replace("--bypass-rtk", "", StringComparison.OrdinalIgnoreCase).Trim(),
+        orchestration_status = "bypassed",
+        metrics = new
+        {
+            tokens_original = CursorSessionMeter.EstimateTokens(prompt),
+            tokens_optimized = CursorSessionMeter.EstimateTokens(prompt),
+            tokens_saved = 0,
+            savings_percentage = 0,
+        },
+    };
+    Console.WriteLine(JsonSerializer.Serialize(payload));
+}
+
 static void RecordPromptSessionEvent(
+    int rawPayloadTokens,
     int promptTokens,
-    int hookObservedTokens,
     ContextPruningResult contextPruning,
     string status)
 {
-    int original = Math.Max(
-        hookObservedTokens,
-        promptTokens + contextPruning.OriginalTokenCount);
+    int original = rawPayloadTokens;
     int optimized = promptTokens + contextPruning.PrunedTokenCount;
     int saved = Math.Max(0, original - optimized);
     CursorSessionMeter.Record(new CursorSessionEvent(
@@ -252,56 +276,45 @@ static void RecordPromptSessionEvent(
         saved));
 }
 
-static string[] ExtractPromptContextArgs(string prompt)
-{
-    var args = new List<string>();
-    foreach (Match match in Regex.Matches(
-                 prompt,
-                 @"(?<path>[\w./\\-]+\.(cs|ts|tsx|js|jsx|py|json|ya?ml|sql|md))(?::(?<line>\d+))?",
-                 RegexOptions.IgnoreCase))
-    {
-        string path = match.Groups["path"].Value;
-        string line = match.Groups["line"].Value;
-        args.Add(string.IsNullOrWhiteSpace(line) ? path : $"{path}:{line}");
-    }
-
-    Match lineMatch = Regex.Match(prompt, @"\bline\s+(?<line>\d+)\b", RegexOptions.IgnoreCase);
-    if (lineMatch.Success && args.All(arg => !arg.Contains(':', StringComparison.Ordinal)))
-    {
-        args.Add("--line");
-        args.Add(lineMatch.Groups["line"].Value);
-    }
-
-    return args.Distinct(StringComparer.Ordinal).ToArray();
-}
-
 static void WritePromptOrchestrationJson(
     string prompt,
     ContextPruningResult contextPruning,
     string status,
+    ContextAnalysisResult analysis,
     JToken? lambdaMetrics)
 {
-    int saved = Math.Max(0, contextPruning.OriginalTokenCount - contextPruning.PrunedTokenCount);
-    decimal savingsPercent = contextPruning.OriginalTokenCount > 0
-        ? Math.Round(((decimal)saved / contextPruning.OriginalTokenCount) * 100, 2)
+    int promptTokens = CursorSessionMeter.EstimateTokens(prompt);
+    int rawPayloadTokens = promptTokens + contextPruning.OriginalTokenCount;
+    int prunedPayloadTokens = promptTokens + contextPruning.PrunedTokenCount;
+    int saved = Math.Max(0, rawPayloadTokens - prunedPayloadTokens);
+    decimal savingsPercent = rawPayloadTokens > 0
+        ? Math.Round(((decimal)saved / rawPayloadTokens) * 100, 2)
         : 0;
     CursorSessionMeter.RecordLatestPromptSavings(new PromptSavingsSnapshot(
         DateTimeOffset.UtcNow,
         status,
-        contextPruning.OriginalTokenCount,
-        contextPruning.PrunedTokenCount,
+        rawPayloadTokens,
+        prunedPayloadTokens,
         saved,
         savingsPercent));
     var payload = new
     {
         optimized_prompt = BuildOptimizedPrompt(prompt, contextPruning, saved, savingsPercent),
         orchestration_status = status,
+        context_discovery = new
+        {
+            strategy = analysis.Strategy,
+            reason = analysis.Reason,
+            files = contextPruning.Files,
+        },
         metrics = new
         {
             tokens_original = contextPruning.OriginalTokenCount,
             tokens_optimized = contextPruning.PrunedTokenCount,
             tokens_saved = saved,
             savings_percentage = savingsPercent,
+            raw_payload_tokens = rawPayloadTokens,
+            pruned_payload_tokens = prunedPayloadTokens,
             lambda = lambdaMetrics,
         },
     };
