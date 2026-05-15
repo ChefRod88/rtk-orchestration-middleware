@@ -9,10 +9,15 @@ using R2K.CLI;
 // Override with env RTK_API_URL; Function auth: set RTK_FUNCTION_KEY (x-functions-key).
 var apiUrl = Environment.GetEnvironmentVariable("RTK_API_URL")
     ?? "";
-var promptApiUrl = Environment.GetEnvironmentVariable("RTK_PROMPT_API_URL")
-    ?? DerivePromptApiUrl(apiUrl);
 
 if (args.Length == 0) return;
+
+var hookRegistry = HookRegistry.LoadFromDefaultLocations();
+if (string.IsNullOrWhiteSpace(apiUrl))
+    apiUrl = hookRegistry.Settings.TelemetryEndpoint ?? "";
+
+var promptApiUrl = Environment.GetEnvironmentVariable("RTK_PROMPT_API_URL")
+    ?? DerivePromptApiUrl(apiUrl);
 
 if (string.Equals(args[0], "--cursor-session-report", StringComparison.Ordinal))
 {
@@ -38,10 +43,6 @@ if (string.Equals(args[0], "--optimize-prompt", StringComparison.Ordinal))
     await OptimizePrompt(args.Skip(1).ToArray(), promptApiUrl);
     return;
 }
-
-var hookRegistry = HookRegistry.LoadFromDefaultLocations();
-if (string.IsNullOrWhiteSpace(apiUrl))
-    apiUrl = hookRegistry.Settings.TelemetryEndpoint ?? "";
 
 if (string.Equals(args[0], "--orchestrate-prompt", StringComparison.Ordinal))
 {
