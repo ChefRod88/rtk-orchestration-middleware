@@ -180,6 +180,17 @@ Installs CLI, `~/.config/r2k/hooks.json`, shims, MCP build, merges `r2k-optimize
 
 Restart Cursor; check **Settings → Tools & MCP**.
 
+### Linux-only (no Windows MCP)
+
+`install-r2k-global.sh` and `setup-r2k-codespace.sh` write MCP paths for **the machine where the script runs** (e.g. `/workspace/extras/mcp-rtk-server/dist/index.js`). They do **not** configure Windows desktop Cursor.
+
+If Windows shows `Cannot find module 'C:\workspace\...\dist\index.js'`:
+
+1. On Windows: remove `r2k-optimizer` from `%USERPROFILE%\.cursor\mcp.json` (`bash scripts/strip-r2k-mcp-entry.sh` in Git Bash, or edit by hand).
+2. On Linux: run the global installer, then open the repo via **Codespace, Remote-SSH, or Dev Container**.
+
+See **[LINUX_ONLY_SETUP.md](LINUX_ONLY_SETUP.md)**.
+
 ---
 
 ## Cursor prompt hook

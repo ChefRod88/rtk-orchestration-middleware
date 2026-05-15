@@ -40,6 +40,7 @@
 | Guide | Who it's for |
 |-------|----------------|
 | **[RTK End-User Guide](docs/END_USER_GUIDE.md)** | Daily Cursor usage, `rtk` prompt prefix, MCP, savings reports |
+| **[Linux-only setup](docs/LINUX_ONLY_SETUP.md)** | Codespace/SSH only; disable broken Windows MCP (`C:\workspace\...`) |
 | **[Technical Usage Guide](docs/USAGE.md)** | Hooks, CLI flags, AWS/Lambda, hooks, test checklist |
 | **[AWS Lambda Readme](R2K.Backend.AWS/Readme.md)** | `R2KOptimizer` deploy, payload contract, MySQL telemetry |
 | **[Cursor MCP setup](extras/CURSOR_MCP_DOCS_SETUP.txt)** | Index MCP spec in Cursor Docs + register `r2k-optimizer` |
