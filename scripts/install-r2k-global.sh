@@ -16,6 +16,15 @@ RTK_PROMPT_API_URL_DEFAULT="${RTK_PROMPT_API_URL:-${RTK_API_URL_DEFAULT}}"
 RTK_CLI_PATH_DEFAULT="${RTK_CLI_PATH:-/usr/local/bin/rtk}"
 RTK_CONFIG_DIR="${HOME}/.config/r2k"
 RTK_SHIM_DIR="${HOME}/.local/share/r2k/shims"
+# hooks.json may list "npm" so we symlink RTK_CLI into RTK_SHIM_DIR/npm; MCP build needs Node's npm.
+if [[ -x /usr/bin/npm ]]; then
+  NPM_CMD=(/usr/bin/npm)
+elif NPM_PATH="$(PATH="/usr/local/bin:/usr/bin" command -v npm 2>/dev/null)" && [[ -n "${NPM_PATH}" ]]; then
+  NPM_CMD=("${NPM_PATH}")
+else
+  echo "error: Node.js npm not found; install npm, then rerun this script." >&2
+  exit 1
+fi
 CURSOR_CONFIG_DIR="${HOME}/.cursor"
 CURSOR_MCP_JSON="${CURSOR_CONFIG_DIR}/mcp.json"
 CURSOR_HOOKS_DIR="${CURSOR_CONFIG_DIR}/hooks"
@@ -54,11 +63,11 @@ for command_name in "${hook_commands[@]}"; do
 done
 
 if [[ -f "${MCP_DIR}/package-lock.json" ]]; then
-  npm --prefix "${MCP_DIR}" ci
+  "${NPM_CMD[@]}" --prefix "${MCP_DIR}" ci
 else
-  npm --prefix "${MCP_DIR}" install
+  "${NPM_CMD[@]}" --prefix "${MCP_DIR}" install
 fi
-npm --prefix "${MCP_DIR}" run build
+"${NPM_CMD[@]}" --prefix "${MCP_DIR}" run build
 
 python3 - "${CURSOR_MCP_JSON}" "${MCP_DIST}" "${RTK_CLI_PATH_DEFAULT}" "${RTK_API_URL_DEFAULT}" "${RTK_PROMPT_API_URL_DEFAULT}" <<'PY'
 import json
