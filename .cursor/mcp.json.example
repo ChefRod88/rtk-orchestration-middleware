@@ -2,7 +2,7 @@
   "mcpServers": {
     "r2k-optimizer": {
       "command": "node",
-      "args": ["/workspaces/r2k-orchestration-middleware/extras/mcp-rtk-server/dist/index.js"],
+      "args": ["/absolute/path/to/rtk-orchestration-middleware/extras/mcp-rtk-server/dist/index.js"],
       "env": {
         "RTK_CLI_PATH": "/usr/local/bin/rtk",
         "RTK_API_URL": "https://awv3cnqcx0.execute-api.us-east-2.amazonaws.com/OptimizeCommand",

@@ -48,8 +48,13 @@ Implement or extend MCP integration for repo `extras/mcp-rtk-server/` so Cursor 
 
 Constraints:
   - Protocol nuances: follow @MCP (indexed documentation).
-  - Tool name: run_rtk_command
-  - Input: `{ "command": string }` executed as parsed argv segments for `rtk`.
+  - Tools shipped in extras/mcp-rtk-server:
+      run_rtk_command          → tokenized argv for rtk
+      r2k_orchestrate_prompt → rtk --orchestrate-prompt (optional dryRun)
+      r2k_dry_run_context      → command + --dry-run
+      r2k_session_report       → --cursor-session-report / reset
+  - End-user guide: docs/END_USER_GUIDE.md
+  - Operator guide: docs/USAGE.md
 --- end cut ---
 
 
