@@ -14,6 +14,7 @@
 <details>
 <summary><strong>On this page</strong></summary>
 
+- [Documentation](#documentation)
 - [What this is](#what-this-is)
 - [Why it matters](#why-it-matters)
 - [Use it now](#use-it-now)
@@ -31,6 +32,17 @@
 - [License](#license)
 
 </details>
+
+---
+
+## Documentation
+
+| Guide | Who it's for |
+|-------|----------------|
+| **[RTK End-User Guide](docs/END_USER_GUIDE.md)** | Daily Cursor usage, `rtk` prompt prefix, MCP, savings reports |
+| **[Technical Usage Guide](docs/USAGE.md)** | Hooks, CLI flags, AWS/Lambda, hooks, test checklist |
+| **[AWS Lambda Readme](R2K.Backend.AWS/Readme.md)** | `R2KOptimizer` deploy, payload contract, MySQL telemetry |
+| **[Cursor MCP setup](extras/CURSOR_MCP_DOCS_SETUP.txt)** | Index MCP spec in Cursor Docs + register `r2k-optimizer` |
 
 ---
 
@@ -64,12 +76,15 @@ bash scripts/install-r2k-global.sh
 
 Then restart Cursor and verify `r2k-optimizer` appears under **Settings -> Tools & MCP**.
 
+**Prompt tip:** start any Cursor prompt with **`rtk`** to force a workspace scan and lean context (see the [End-User Guide](docs/END_USER_GUIDE.md#the-rtk-prompt-prefix-recommended)).
+
 Common commands:
 
 ```bash
 rtk cursor R2K.CLI/Program.cs:42 --dry-run
 rtk --last-prompt-savings
 rtk --cursor-session-report
+printf 'rtk explain the orchestrator' | rtk --orchestrate-prompt --dry-run
 ```
 
 **R2K** also still supports the original command-optimizer path. A thin **`rtk` binary** can forward command and context payloads to an **`OptimizeCommand`** HTTP endpoint. The backend:
@@ -146,7 +161,10 @@ git clone https://github.com/ChefRod88/rtk-orchestration-middleware.git
 | [`R2K.CLI/`](R2K.CLI/) | .NET 8 console app; publish **linux-x64** self-contained single-file → **`rtk`**. |
 | [`scripts/install-rtk.sh`](scripts/install-rtk.sh) | Builds CLI and **`sudo install`** to **`/usr/local/bin/rtk`**. |
 | [`extras/mcp-stdio-rtk-stub/`](extras/mcp-stdio-rtk-stub/) | Lightweight **JavaScript** MCP stub (`rtk_invoke` argv array); **Node/npm** required. |
-| [`extras/mcp-rtk-server/`](extras/mcp-rtk-server/) | **TypeScript / Node** MCP server (`run_rtk_command` → tokenized `spawn` → `/usr/local/bin/rtk`; SDK handles MCP JSON-RPC + lifecycle). |
+| [`extras/mcp-rtk-server/`](extras/mcp-rtk-server/) | **TypeScript / Node** MCP server (`run_rtk_command`, `r2k_orchestrate_prompt`, `r2k_dry_run_context`, `r2k_session_report`). |
+| [`hooks.json`](hooks.json) | Interception registry: commands, pruning strategies, telemetry endpoint. |
+| [`docs/END_USER_GUIDE.md`](docs/END_USER_GUIDE.md) | End-user workflows and troubleshooting. |
+| [`docs/USAGE.md`](docs/USAGE.md) | Technical operator guide (AWS, hooks, MCP, tests). |
 | [`extras/CURSOR_MCP_DOCS_SETUP.txt`](extras/CURSOR_MCP_DOCS_SETUP.txt) | Step-by-step: **Cursor Features → Docs** MCP URL index + Composer prompt snippets. |
 | [`.cursor/mcp.json.example`](.cursor/mcp.json.example) | Copy/adapt → **`~/.cursor/mcp.json`** or `.cursor/mcp.json` (**gitignored**) to register the server in Cursor. |
 | [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc) | Project rule cheat sheet (`@`-reference in Composer alongside indexed **MCP** doc). |
@@ -206,14 +224,7 @@ export RTK_FUNCTION_KEY='<function-or-host-key>'   # AuthorizationLevel.Function
 
 Reload: **`source ~/.bashrc`** (interactive sessions).
 
-**Optional aliases** (`git` interception can confuse scripts—use `\git` when needed):
-
-```bash
-# RTK Automation Hooks
-alias npm='rtk npm'
-alias git='rtk git'
-alias npx='rtk npx'
-```
+**Interception without aliases:** prefer registry-driven shims from [`hooks.json`](hooks.json) (`~/.local/share/r2k/shims` on `PATH`). Optional bash aliases are documented in the usage guide but not required.
 
 **Function host locally** — add **`local.settings.json`** under **`R2K.Backend/`** mirroring portal values (gitignored):
 
@@ -295,8 +306,6 @@ Push **`main`** runs [`.github/workflows/main_rtk-ochestration-middleware.yml`](
 
 Status-style rows first, then forward-looking backlog. Order is directional, not contractual.
 
-**Blueprint note:** The Mission 2026 deployment guide targets **`SessionId`** on **`TokenLogs`**, a fuller **CLI telemetry report**, and optional **`cursor`** shell interception. Those items are **not** fully reflected in runtime output/schema yet—see **Now → N4–N6**.
-
 ### Shipped (baseline)
 
 | ID | Capability |
@@ -308,6 +317,9 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | S5 | **xUnit** coverage for tokenizer + optimizer; **`local.settings.json` / `func-out` / `node_modules` / MCP `dist/`** git hygiene. |
 | S6 | **MCP Cursor integration assets**: **`extras/CURSOR_MCP_DOCS_SETUP.txt`**, rule [`.cursor/rules/mcp-protocol-reference.mdc`](.cursor/rules/mcp-protocol-reference.mdc), example [`.cursor/mcp.json.example`](.cursor/mcp.json.example) (real **`mcp.json` gitignored**). |
 | S7 | **MCP servers** on **`@modelcontextprotocol/sdk`**: JS **`rtk_invoke`** ([`extras/mcp-stdio-rtk-stub`](extras/mcp-stdio-rtk-stub)); TS **`run_rtk_command`** ([`extras/mcp-rtk-server`](extras/mcp-rtk-server)) + **`shell-quote`** tokenization; **`package-lock.json`** in both extras for reproducible **`npm ci`**. |
+| S8 | **Agentic orchestrator**: root **`hooks.json`**, **`ContextPruner`** / **`ContextPruningEngine`**, line-aware + **`diff-only`** pruning, AWS Lambda refinement + MySQL analytics columns. |
+| S9 | **Cursor integration**: global installer, **`beforeSubmitPrompt`** hook → **`--orchestrate-prompt`**, **`PromptIntent`** (`rtk` prefix), **`ContextAnalyzer`**, session meter + savings footer. |
+| S10 | **MCP tools**: **`r2k_orchestrate_prompt`**, **`r2k_dry_run_context`**, **`r2k_session_report`**; docs in **`docs/END_USER_GUIDE.md`** and **`docs/USAGE.md`**. |
 
 ### Now (next 1–2 iterations)
 
@@ -316,9 +328,9 @@ Status-style rows first, then forward-looking backlog. Order is directional, not
 | N1 | Azure alignment | Provision / verify **Function App** (correct plan + **`AzureWebJobsStorage`**); confirm workflow **`app-name`** + RBAC/OIDC deploy succeeds end-to-end. |
 | N2 | Secrets ergonomics | Key Vault references or documented rotation for **`SqlConnectionString`** + function keys; align portal settings with **`local.settings.json`** template snippet in wiki/issue. |
 | N3 | Cursor + MCP smoke | Index **MCP** docs (**Features → Docs**); register **`mcp.json`** from **`.cursor/mcp.json.example`**; verify **`run_rtk_command`** end-to-end against **`rtk`**. |
-| N4 | **`TokenLogs` parity** | Add **`SessionId`** (GUID or string) column end-to-end: [`Schema/TokenLogs.sql`](R2K.Backend/Schema/TokenLogs.sql), Dapper insert, optional propagation from CLI **`X-RTK-Session`** header. |
-| N5 | **CLI telemetry parity** | Implement **RTK TELEMETRY REPORT**–style block (**original / optimized / saved this run / session total**); derive **tokens saved** client-side; refuse startup with clear error when **`RTK_API_URL`** is empty. |
-| N6 | **Shell hooks parity** | Document optional **`alias cursor='rtk cursor'`** (and trade-offs) next to **`npm`/`git`/`npx`**; Codespace **dotfiles** recipe for durable hooks. |
+| N4 | **Session correlation** | Propagate stable **`SessionId`** from CLI → Lambda → dashboard (column exists; wire end-to-end). |
+| N5 | **CLI telemetry parity** | Unified **RTK TELEMETRY REPORT** banner for commands + prompts; stricter empty-URL guard on intercept path. |
+| N6 | **Tiktoken on CLI path** | Replace char÷4 estimates with Tiktoken where feasible for closer billing alignment. |
 
 ### Next (engineering hardening)
 

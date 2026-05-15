@@ -32,7 +32,12 @@ Implementations **must keep request ordering + id correctness** intact; do not m
 
 ### Tools you ship here
 
-- **`run_rtk_command`** (`extras/mcp-rtk-server/src/index.ts`): required string **`command`** → tokenizes with **`shell-quote` parse** → `spawn(RTK_CLI_PATH)` default **`/usr/local/bin/rtk`**.
+- **`run_rtk_command`**: tokenized argv → `spawn(RTK_CLI_PATH)`.
+- **`r2k_orchestrate_prompt`**: `rtk --orchestrate-prompt` (+ optional dry run).
+- **`r2k_dry_run_context`**: registered command + `--dry-run`.
+- **`r2k_session_report`**: session report or reset.
+
+See `extras/mcp-rtk-server/src/index.ts` and `docs/USAGE.md`.
 
 ## Debugging checklist
 

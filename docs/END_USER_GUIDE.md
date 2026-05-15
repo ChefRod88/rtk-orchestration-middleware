@@ -1,20 +1,27 @@
 # RTK End-User Guide
 
-RTK is a token-saving orchestration layer for Cursor and terminal workflows. It acts like a surgical filter between your repo and AI tooling: it keeps the useful context, removes noisy code, sends lean payloads to the optimizer, and reports the savings back to you.
+RTK is a **token-saving orchestration layer** for Cursor and your terminal. It sits between your repo and AI tooling like a surgical filter: it keeps the context the model needs, strips noisy code, optionally sends lean payloads to the cloud optimizer, and reports savings back to you.
+
+**New here?** Read [What RTK does](#what-rtk-does), run [One-time global install](#one-time-global-install), then use the [`rtk` prompt prefix](#the-rtk-prompt-prefix-recommended) for reliable workspace scans.
+
+---
 
 ## What RTK does
 
-- Intercepts configured commands such as `git`, `npm`, and `cursor`.
-- Reads a registry from `hooks.json` or global `~/.config/r2k/hooks.json`.
-- Prunes local code context before it reaches AI workflows.
-- Redacts common secrets before cloud upload.
-- Sends optimized payloads to AWS Lambda.
-- Records local token savings reports.
-- Exposes Cursor MCP tools globally through `r2k-optimizer`.
+| Capability | What you get |
+|------------|----------------|
+| Command interception | Configured tools (`git`, `npm`, `cursor`, …) route through `rtk` via shims. |
+| Context pruning | Local code is reduced with `minimal`, `diff-only`, or `agentic` strategies before cloud calls. |
+| Prompt orchestration | Visible Cursor prompts can be analyzed, pruned, and resubmitted with an RTK savings footer. |
+| Secret redaction | Common password/token patterns are masked before cloud upload. |
+| Measurement | Local reports for the latest prompt and full observed session. |
+| Cursor MCP | Global `r2k-optimizer` tools call `rtk` from chat without memorizing flags. |
 
 ## What RTK cannot fully see
 
-RTK reports observed savings from prompts, files, commands, and MCP calls it can inspect. Cursor may still add hidden/system context outside the hook/MCP surface. Treat RTK numbers as observed workflow savings, not provider billing totals.
+RTK reports **observed** savings from prompts, files, commands, and MCP calls it can inspect. Cursor may still attach hidden/system context (rules, tool output, background agents) outside the hook/MCP surface. Treat RTK numbers as **workflow savings for RTK-routed traffic**, not exact provider billing totals.
+
+---
 
 ## One-time global install
 
@@ -30,15 +37,17 @@ This installs:
 |------|----------|
 | RTK CLI | `/usr/local/bin/rtk` |
 | Global policy | `~/.config/r2k/hooks.json` |
-| Command shims | `~/.local/share/r2k/shims` |
-| Cursor MCP config | `~/.cursor/mcp.json` |
-| Cursor prompt hook | `~/.cursor/hooks.json` |
+| Command shims | `~/.local/share/r2k/shims` (prepended to `PATH`) |
+| Cursor MCP | `~/.cursor/mcp.json` → `r2k-optimizer` |
+| Cursor prompt hook | `~/.cursor/hooks.json` + `optimize-prompt.py` |
 
-After install, restart Cursor.
+**Codespaces only:** `scripts/setup-r2k-codespace.sh` does the same for the dev container (repo `hooks.json`, shims, env vars).
+
+After install, **restart Cursor**.
+
+---
 
 ## Verify installation
-
-Run:
 
 ```bash
 which rtk
@@ -47,38 +56,46 @@ cat ~/.cursor/mcp.json
 cat ~/.cursor/hooks.json
 ```
 
-In Cursor, open:
+In Cursor: **Settings → Tools & MCP** → confirm **`r2k-optimizer`** is listed and connected.
+
+---
+
+## The `rtk` prompt prefix (recommended)
+
+Starting a prompt with **`rtk`** tells RTK to **force a workspace scan** and attach pruned project context—even when you do not name a file.
+
+| You type | RTK behavior |
+|----------|----------------|
+| `rtk` | Scans the workspace and uses a default review prompt. |
+| `rtk fix the auth bug in login` | Strips `rtk`, scans for relevant files, sends a lean prompt. |
+| `rtk: explain Program.cs line 42` | Same as `rtk ` (colon form). |
+| `Fix line 42 in Program.cs` (no prefix) | Uses explicit paths/lines when present; otherwise lighter discovery. |
+
+**Real example**
 
 ```text
-Settings -> Tools & MCP
+rtk scan focus.cs and explain how Function.cs is used
 ```
 
-You should see:
+RTK will:
 
-```text
-r2k-optimizer
-```
+1. Remove the `rtk` trigger from the text Cursor sees.
+2. Discover `focus.cs`, `Function.cs`, and related files in the repo.
+3. Prune those files (signatures, line windows, headers—not full 500-line dumps).
+4. Return an optimized prompt for you to submit (via hook block or MCP).
+5. Ask the model to end its answer with an **RTK Savings** footer.
+
+---
 
 ## Daily Cursor usage
 
 ### Automatic visible prompt preflight
 
-When Cursor supports global hooks, RTK inspects visible prompts before submit. If RTK detects savings, Cursor blocks the original prompt and shows an optimized prompt to resubmit.
+When Cursor supports global hooks, RTK runs **before** you submit a visible prompt:
 
-Example prompt:
-
-```text
-Fix line 42 in R2K.CLI/Program.cs and explain the change briefly.
-```
-
-RTK returns a pruned prompt containing:
-
-- the original request,
-- a focused code window,
-- structural context,
-- an instruction to append an RTK savings footer.
-
-After the answer, Cursor should include:
+1. Hook calls `rtk --orchestrate-prompt` with your text.
+2. If RTK finds meaningful savings, Cursor **blocks** the original and shows an **optimized prompt to resubmit**.
+3. After the answer, the model should append:
 
 ```text
 RTK Savings:
@@ -88,32 +105,52 @@ RTK Savings:
 - Savings: ...%
 ```
 
-### Use the MCP tools directly
+You can also print the same numbers in a terminal:
 
-In Cursor chat, ask:
+```bash
+rtk --last-prompt-savings
+```
+
+### Skip RTK for one prompt
+
+Add anywhere in the prompt:
+
+```text
+--bypass-rtk
+```
+
+RTK passes your text through without pruning (hook allows submission as-is).
+
+### Use MCP tools in chat
+
+Examples:
 
 ```text
 Use r2k-optimizer to run r2k_session_report
 ```
 
-Useful MCP tools:
+```text
+Use r2k-optimizer r2k_orchestrate_prompt with dryRun true for: rtk explain the orchestrator
+```
 
 | Tool | Use it for |
 |------|------------|
-| `run_rtk_command` | Run an RTK-routed terminal command. |
-| `r2k_orchestrate_prompt` | Run prompt orchestration on visible text. |
-| `r2k_dry_run_context` | Estimate savings without sending to Lambda. |
-| `r2k_session_report` | Show/reset observed Cursor session totals. |
+| `run_rtk_command` | Run an RTK-routed terminal command (`git status`, `cursor File.cs:42 --dry-run`, …). |
+| `r2k_orchestrate_prompt` | Orchestrate visible prompt text (optional dry run). |
+| `r2k_dry_run_context` | Estimate command/context savings without Lambda. |
+| `r2k_session_report` | Show or reset observed session totals. |
+
+---
 
 ## Terminal usage
 
-### Dry-run context pruning
+### Dry-run (no cloud, no command execution)
 
 ```bash
 rtk cursor R2K.CLI/Program.cs:42 --dry-run
 ```
 
-This prints a local estimate and skips AWS/network calls.
+Prints a **Mission 2026 Token Savings Estimate** locally.
 
 ### Latest prompt savings
 
@@ -121,21 +158,26 @@ This prints a local estimate and skips AWS/network calls.
 rtk --last-prompt-savings
 ```
 
-### Observed session savings
+### Observed session report / reset
 
 ```bash
 rtk --cursor-session-report
-```
-
-### Reset observed session
-
-```bash
 rtk --cursor-session-reset
 ```
 
+### Legacy prompt cleanup (whitespace only)
+
+```bash
+printf 'please      clean     this' | rtk --optimize-prompt
+```
+
+For full context pruning, prefer **`--orchestrate-prompt`** (used by the Cursor hook and MCP).
+
+---
+
 ## Policy configuration
 
-Root `hooks.json`:
+Root [`hooks.json`](../hooks.json) (or global `~/.config/r2k/hooks.json`):
 
 ```json
 {
@@ -152,23 +194,25 @@ Root `hooks.json`:
 }
 ```
 
-Lookup order:
+**Lookup order:** repo `hooks.json` → `~/.config/r2k/hooks.json` → pass-through (command runs normally).
 
-1. repo-local `hooks.json`
-2. global `~/.config/r2k/hooks.json`
-3. pass-through when neither exists
+---
 
-## Strategies
+## Pruning strategies
 
 | Strategy | Behavior |
 |----------|----------|
-| `minimal` | Keeps file context mostly intact. |
+| `minimal` | Keeps file context mostly intact (light trim). |
 | `diff-only` | Uses `git diff` and `git diff --cached` instead of whole files. |
-| `agentic` | Extracts targeted line windows, signatures, declarations, and structural context. |
+| `agentic` | Line windows (`File.cs:42`), method signatures, class headers; bodies become `// ... [logic removed] ...`. |
 
-## Windows setup notes
+Non-code files (Markdown, JSON, YAML) use a lighter structural pass so README-style content is not destroyed.
 
-If Cursor runs on Windows, the MCP config must use Windows paths. Build the MCP server and Windows RTK executable from a Windows PowerShell terminal:
+---
+
+## Windows setup
+
+Cursor on Windows needs **Windows paths** in `mcp.json`, not Linux/Codespace paths.
 
 ```powershell
 cd $env:USERPROFILE\rtk-orchestration-middleware
@@ -179,33 +223,28 @@ cd ..\..
 dotnet publish .\R2K.CLI\R2K.CLI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-Then point `%USERPROFILE%\.cursor\mcp.json` at:
+Point `%USERPROFILE%\.cursor\mcp.json` at:
 
-```text
-C:\Users\<you>\rtk-orchestration-middleware\extras\mcp-rtk-server\dist\index.js
-```
+- `...\extras\mcp-rtk-server\dist\index.js`
+- `...\R2K.CLI\bin\Release\net8.0\win-x64\publish\R2K.CLI.exe` as `RTK_CLI_PATH`
 
-and:
+Restart Cursor after editing MCP or hooks.
 
-```text
-C:\Users\<you>\rtk-orchestration-middleware\R2K.CLI\bin\Release\net8.0\win-x64\publish\R2K.CLI.exe
-```
+---
 
 ## Troubleshooting
 
-### MCP says module not found
+### MCP: module not found
 
-Your `mcp.json` points to a path that does not exist. Build the MCP server and update `args[0]`.
+`mcp.json` `args[0]` must point at a built `dist/index.js` on **your** machine:
 
 ```bash
-cd extras/mcp-rtk-server
-npm ci
-npm run build
+cd extras/mcp-rtk-server && npm ci && npm run build
 ```
 
-### `npm ci` runs through RTK and fails
+### `npm ci` intercepted by RTK
 
-Temporarily remove RTK shims from `PATH`:
+Temporarily remove shims from `PATH`:
 
 ```bash
 export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v "$HOME/.local/share/r2k/shims" | paste -sd: -)"
@@ -213,32 +252,48 @@ hash -r
 npm ci
 ```
 
-### Cursor prompt hook does not fire
+### Prompt hook never fires
 
-Check:
+- Confirm `~/.cursor/hooks.json` exists (global installer).
+- Confirm `which rtk` works.
+- Restart Cursor after hook/MCP changes.
+- Some Cursor surfaces (e.g. certain background agents) may not run `beforeSubmitPrompt`.
+
+### Savings look too high or too low
+
+RTK estimates tokens as **characters ÷ 4** for local context and cannot see all hidden Cursor context. Use reports as **directional** metrics for RTK-routed flows.
+
+### Need real `git` / `npm` without RTK
 
 ```bash
-cat ~/.cursor/hooks.json
-which rtk
-rtk --cursor-session-report
+command git status
+/usr/bin/git status
 ```
 
-Restart Cursor after changing hook or MCP configuration.
+Or remove shims from `PATH` as above.
 
-### Token savings look too high or too low
-
-RTK uses an estimate for local context tokens and cannot see all hidden Cursor context. Use the reports as observed savings for RTK-routed prompts and commands.
+---
 
 ## Recommended workflow
 
-1. Install globally.
-2. Restart Cursor.
+1. Run `bash scripts/install-r2k-global.sh` once.
+2. Restart Cursor; verify **r2k-optimizer** under Tools & MCP.
 3. Open any repo.
-4. Ask specific prompts with file paths and line numbers.
-5. Resubmit the RTK-optimized prompt when the hook blocks.
-6. Review savings:
+4. Prefer prompts like: **`rtk`** + your question, or include `path/to/File.cs:line`.
+5. When the hook blocks, **resubmit** the optimized prompt.
+6. Check savings:
 
 ```bash
 rtk --last-prompt-savings
 rtk --cursor-session-report
 ```
+
+---
+
+## More documentation
+
+| Doc | Audience |
+|-----|----------|
+| [README.md](../README.md) | Project overview, architecture, CI/CD |
+| [USAGE.md](USAGE.md) | Operators: AWS, Lambda, hooks, MCP, test checklist |
+| [R2K.Backend.AWS/Readme.md](../R2K.Backend.AWS/Readme.md) | AWS Lambda deploy and payload contract |

@@ -41,6 +41,12 @@ public sealed class ContextPruner
         if (targetLine is > 0)
             AppendTargetedWindow(output, lines, targetLine.Value, contextRadius);
 
+        if (IsStructuredText(filePath))
+        {
+            AppendStructuredTextSummary(output, lines);
+            return output.ToString().TrimEnd();
+        }
+
         for (var i = 0; i < lines.Length; i++)
         {
             string line = lines[i];
@@ -125,6 +131,39 @@ public sealed class ContextPruner
             output.AppendLine($"// L{i + 1}: {lines[i].TrimEnd()}");
 
         output.AppendLine();
+    }
+
+    private static bool IsStructuredText(string filePath)
+        => Path.GetExtension(filePath).ToLowerInvariant() is ".md" or ".json" or ".yml" or ".yaml" or ".csproj" or ".sln";
+
+    private static void AppendStructuredTextSummary(StringBuilder output, string[] lines)
+    {
+        var written = 0;
+        foreach (string line in lines)
+        {
+            string trimmed = line.TrimEnd();
+            if (trimmed.Length == 0)
+                continue;
+
+            bool important = trimmed.StartsWith('#')
+                || trimmed.StartsWith('-')
+                || trimmed.StartsWith('|')
+                || trimmed.StartsWith('{')
+                || trimmed.StartsWith('}')
+                || trimmed.Contains("<Project", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Contains("<TargetFramework", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("Project(", StringComparison.Ordinal);
+            if (!important && written >= 12)
+                continue;
+
+            output.AppendLine(trimmed);
+            written++;
+            if (written >= 60)
+            {
+                output.AppendLine("// ... [additional structured text removed] ...");
+                return;
+            }
+        }
     }
 
     private static string Normalize(string line)
